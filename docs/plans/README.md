@@ -40,18 +40,20 @@ This plan assumes Unity-ready character models and animations (FBX/GLB format) a
 | Phase | Goal | Estimated Tokens |
 |-------|------|------------------|
 | Phase 0 | Architecture & Design Foundation | N/A (Reference) |
-| Phase 1 | Project Structure & Asset Integration | ~95,000 |
+| **Phase 0.5** | **Asset Migration & Organization** | **~30,000** |
+| Phase 1 | Project Structure & Asset Integration | ~70,000 (reduced) |
 | Phase 2 | Animation System & State Machine | ~110,000 |
 | Phase 3 | Combat Mechanics & Hit Detection | ~105,000 |
 | Phase 4 | AI Opponent Foundation | ~90,000 |
 | Phase 5 | Polish, Testing & Integration | ~85,000 |
 
-**Total Estimated Tokens:** ~485,000 (5 implementation phases)
+**Total Estimated Tokens:** ~490,000 (6 phases: 1 migration + 5 implementation)
 
 ## Phase Navigation
 
 - **[Phase 0: Architecture & Design Foundation](Phase-0.md)** - Read this first for architectural context
-- **[Phase 1: Project Structure & Asset Integration](Phase-1.md)** - Unity project setup and asset import
+- **[Phase 0.5: Asset Migration & Organization](Phase-0.5.md)** - ⭐ START HERE - Reorganize existing assets
+- **[Phase 1: Project Structure & Asset Integration](Phase-1.md)** - Input System and component setup
 - **[Phase 2: Animation System & State Machine](Phase-2.md)** - Animator controller and animation logic
 - **[Phase 3: Combat Mechanics & Hit Detection](Phase-3.md)** - Fighting mechanics and damage system
 - **[Phase 4: AI Opponent Foundation](Phase-4.md)** - Basic AI behavior and decision-making
@@ -71,6 +73,8 @@ Each phase should be completed sequentially. Within each phase:
 
 ## Getting Started
 
-**Start here:** [Phase 0: Architecture & Design Foundation](Phase-0.md)
+**Start here:**
+1. **[Phase 0: Architecture & Design Foundation](Phase-0.md)** - Read for architectural context
+2. **[Phase 0.5: Asset Migration & Organization](Phase-0.5.md)** - ⭐ Begin implementation here
 
-This document contains all architectural decisions, design patterns, and conventions that apply across all implementation phases.
+Phase 0 contains all architectural decisions, design patterns, and conventions. Phase 0.5 reorganizes your existing assets (boxing animations, character models) into the proper structure before building new systems.
