@@ -13,9 +13,16 @@ namespace Knockout.AI.States
         private const float OPTIMAL_DISTANCE_MAX = 3.0f;
         private const float ATTACK_RANGE = 2.5f;
 
+        // State duration randomization
+        private const float MIN_APPROACH_DURATION = 0.3f;
+        private const float MAX_APPROACH_DURATION = 1.5f;
+
+        private float _approachDuration;
+
         public override void Enter(AIContext context)
         {
-            Debug.Log("[AI] Entering ApproachState - Moving toward player");
+            _approachDuration = Random.Range(MIN_APPROACH_DURATION, MAX_APPROACH_DURATION);
+            Debug.Log($"[AI] Entering ApproachState - Moving toward player for up to {_approachDuration:F2}s");
         }
 
         public override AIState Update(AIContext context)

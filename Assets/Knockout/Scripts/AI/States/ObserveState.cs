@@ -14,14 +14,36 @@ namespace Knockout.AI.States
         private const float TOO_FAR_THRESHOLD = 4.0f;
         private const float TOO_CLOSE_THRESHOLD = 1.5f;
 
+        // State duration randomization
+        private const float MIN_OBSERVE_DURATION = 0.5f;
+        private const float MAX_OBSERVE_DURATION = 2.0f;
+
+        // Mistake probability
+        private const float MISTAKE_CHANCE = 0.2f; // 20% chance to make suboptimal choice
+
+        private float _observeDuration;
+
         public override void Enter(AIContext context)
         {
-            // Initialize observe state
-            Debug.Log("[AI] Entering ObserveState - Watching player");
+            // Initialize observe state with random duration
+            _observeDuration = Random.Range(MIN_OBSERVE_DURATION, MAX_OBSERVE_DURATION);
+            Debug.Log($"[AI] Entering ObserveState - Watching player for {_observeDuration:F2}s");
         }
 
         public override AIState Update(AIContext context)
         {
+            // Don't make decisions too quickly - enforce minimum observe duration
+            if (context.TimeSinceLastStateChange < _observeDuration * 0.5f)
+            {
+                return null; // Stay in observe state
+            }
+
+            // Occasionally make a mistake (20% chance)
+            if (Random.value < MISTAKE_CHANCE)
+            {
+                return MakeSuboptimalChoice(context);
+            }
+
             // Highest priority: Defend if player is attacking and close
             if (context.PlayerIsAttacking && context.DistanceToPlayer < 3.0f)
             {
@@ -49,9 +71,10 @@ namespace Knockout.AI.States
             // In optimal range - consider attacking
             if (context.DistanceToPlayer >= OPTIMAL_DISTANCE_MIN &&
                 context.DistanceToPlayer <= OPTIMAL_DISTANCE_MAX &&
-                !context.PlayerIsAttacking)
+                !context.PlayerIsAttacking &&
+                context.TimeSinceLastStateChange >= _observeDuration)
             {
-                // Attack if in good range and player not blocking
+                // Attack if in good range and observed long enough
                 // 50% chance to attack when in range
                 if (Random.value > 0.5f)
                 {
@@ -60,6 +83,31 @@ namespace Knockout.AI.States
             }
 
             // Stay in observe state
+            return null;
+        }
+
+        /// <summary>
+        /// Makes a suboptimal choice to add unpredictability.
+        /// </summary>
+        private AIState MakeSuboptimalChoice(AIContext context)
+        {
+            // Make a random "mistake"
+            float choice = Random.value;
+
+            if (choice < 0.33f && context.OwnHealthPercentage > 50f)
+            {
+                // Attack when should be cautious
+                Debug.Log("[AI] Making mistake: attacking when should be cautious");
+                return new AttackState();
+            }
+            else if (choice < 0.66f)
+            {
+                // Approach when should maintain distance
+                Debug.Log("[AI] Making mistake: approaching unnecessarily");
+                return new ApproachState();
+            }
+
+            // Otherwise, stay in current state (mistake is inaction)
             return null;
         }
 

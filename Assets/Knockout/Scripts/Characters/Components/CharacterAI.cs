@@ -34,6 +34,16 @@ namespace Knockout.Characters.Components
         [Range(0.0f, 1.0f)]
         private float aggressionLevel = 0.5f;
 
+        [SerializeField]
+        [Tooltip("Random delay before reacting to player actions (seconds)")]
+        [Range(0.0f, 0.5f)]
+        private float reactionDelayMin = 0.1f;
+
+        [SerializeField]
+        [Tooltip("Maximum random delay before reacting to player actions (seconds)")]
+        [Range(0.1f, 0.8f)]
+        private float reactionDelayMax = 0.3f;
+
         // Component references
         private CharacterCombat _characterCombat;
         private CharacterMovement _characterMovement;
