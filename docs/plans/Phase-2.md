@@ -13,7 +13,6 @@ Build the complete animation system including the Animator Controller with layer
 - Character prefabs animate correctly in test scene
 - All tests passing
 
-**Estimated Tokens:** ~110,000
 
 ---
 
@@ -93,7 +92,6 @@ feat(animation): create avatar masks for animation layers
 - Configure humanoid body part selections
 ```
 
-**Estimated Tokens:** ~3,000
 
 ---
 
@@ -191,7 +189,6 @@ feat(animation): create animator controller with locomotion layer
 - Set up transitions between Idle and Movement
 ```
 
-**Estimated Tokens:** ~8,000
 
 ---
 
@@ -230,21 +227,15 @@ feat(animation): create animator controller with locomotion layer
    - This state plays nothing (upper body follows base layer)
 
 4. **Create attack states:**
-   - Create state "JabLeft"
-     - Assign animation clip: "JabLeft"
-     - Motion time should not loop
-   - Create state "JabRight"
-     - Assign animation clip: "JabRight"
-   - Create state "HookLeft"
-     - Assign animation clip: "HookLeft"
-   - Create state "HookRight"
-     - Assign animation clip: "HookRight"
-   - Create state "UppercutLeft"
-     - Assign animation clip: "UppercutLeft"
-   - Create state "UppercutRight"
-     - Assign animation clip: "UppercutRight"
-
-   **Note:** If you only have generic "Jab", "Hook", "Uppercut" clips (no left/right variants), create only three states and ignore left/right distinction. Adjust parameter logic accordingly.
+   - First, **inspect imported animation clips** from Phase 1 to determine naming:
+     - Check `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/`
+     - Look for clips named with left/right variants (e.g., "JabLeft", "JabRight") OR generic names (e.g., "Jab")
+   - **If left/right variants exist:** Create 6 states (JabLeft, JabRight, HookLeft, HookRight, UppercutLeft, UppercutRight)
+   - **If only generic clips exist:** Create 3 states (Jab, Hook, Uppercut) and adjust AttackType parameter to have only 3 values
+   - For each state:
+     - Assign corresponding animation clip
+     - Ensure Motion does not loop
+     - Configure transitions in step 7
 
 5. **Create Recovery state:**
    - Create state "AttackRecovery"
@@ -314,7 +305,6 @@ feat(animation): add upper body layer for attacks and defense
 - Configure transitions for attacks and blocking
 ```
 
-**Estimated Tokens:** ~12,000
 
 ---
 
@@ -445,7 +435,6 @@ feat(animation): add full body override layer for hit reactions
 - Configure transitions for all reaction types
 ```
 
-**Estimated Tokens:** ~14,000
 
 ---
 
@@ -521,7 +510,6 @@ feat(animation): assign animator controller to character prefabs
 - Confirm locomotion, attacks, and hit reactions work correctly
 ```
 
-**Estimated Tokens:** ~6,000
 
 ---
 
@@ -538,170 +526,43 @@ feat(animation): assign animator controller to character prefabs
 **Implementation Steps:**
 
 1. **Create CharacterAnimator.cs:**
-   - Create new C# script at path above
-   - Implement the following structure:
-
-   ```csharp
-   using UnityEngine;
-
-   namespace Knockout.Characters.Components
-   {
-       /// <summary>
-       /// Manages character animation state via the Animator component.
-       /// Provides clean API for controlling locomotion, attacks, and reactions.
-       /// </summary>
-       [RequireComponent(typeof(Animator))]
-       public class CharacterAnimator : MonoBehaviour
-       {
-           // Animator parameter name constants (matches Animator Controller)
-           private static class AnimatorParams
-           {
-               public const string MoveSpeed = "MoveSpeed";
-               public const string MoveDirectionX = "MoveDirectionX";
-               public const string MoveDirectionY = "MoveDirectionY";
-               public const string AttackTrigger = "AttackTrigger";
-               public const string AttackType = "AttackType";
-               public const string IsBlocking = "IsBlocking";
-               public const string UpperBodyWeight = "UpperBodyWeight";
-               public const string HitReaction = "HitReaction";
-               public const string HitType = "HitType";
-               public const string KnockedDown = "KnockedDown";
-               public const string KnockedOut = "KnockedOut";
-               public const string OverrideWeight = "OverrideWeight";
-           }
-
-           // Cached Animator reference
-           private Animator _animator;
-
-           // Events (will be triggered by Animation Events in Phase 2 Task 7)
-           public event System.Action OnAttackStart;
-           public event System.Action OnHitboxActivate;
-           public event System.Action OnHitboxDeactivate;
-           public event System.Action OnAttackRecoveryStart;
-           public event System.Action OnAttackEnd;
-           public event System.Action OnHitReactionEnd;
-           public event System.Action OnKnockedDownComplete;
-           public event System.Action OnGetUpComplete;
-
-           private void Awake()
-           {
-               _animator = GetComponent<Animator>();
-           }
-
-           // Locomotion methods
-           public void SetMovement(Vector2 direction, float speed)
-           {
-               _animator.SetFloat(AnimatorParams.MoveDirectionX, direction.x);
-               _animator.SetFloat(AnimatorParams.MoveDirectionY, direction.y);
-               _animator.SetFloat(AnimatorParams.MoveSpeed, speed);
-           }
-
-           // Attack methods
-           public void TriggerAttack(int attackType)
-           {
-               _animator.SetInteger(AnimatorParams.AttackType, attackType);
-               _animator.SetTrigger(AnimatorParams.AttackTrigger);
-           }
-
-           public void TriggerJab() => TriggerAttack(0);
-           public void TriggerHook() => TriggerAttack(1);
-           public void TriggerUppercut() => TriggerAttack(2);
-
-           // Defense methods
-           public void SetBlocking(bool isBlocking)
-           {
-               _animator.SetBool(AnimatorParams.IsBlocking, isBlocking);
-           }
-
-           // Hit reaction methods
-           public void TriggerHitReaction(int hitType)
-           {
-               _animator.SetInteger(AnimatorParams.HitType, hitType);
-               _animator.SetTrigger(AnimatorParams.HitReaction);
-               SetOverrideLayerWeight(1f); // Enable full body override
-           }
-
-           public void TriggerKnockdown()
-           {
-               _animator.SetBool(AnimatorParams.KnockedDown, true);
-               SetOverrideLayerWeight(1f);
-           }
-
-           public void TriggerKnockout()
-           {
-               _animator.SetBool(AnimatorParams.KnockedOut, true);
-               SetOverrideLayerWeight(1f);
-           }
-
-           // Layer weight control
-           public void SetUpperBodyLayerWeight(float weight)
-           {
-               _animator.SetFloat(AnimatorParams.UpperBodyWeight, weight);
-               // Also set layer weight directly (parameter is for blending over time if needed)
-               _animator.SetLayerWeight(1, weight); // Layer 1 = UpperBody
-           }
-
-           public void SetOverrideLayerWeight(float weight)
-           {
-               _animator.SetFloat(AnimatorParams.OverrideWeight, weight);
-               _animator.SetLayerWeight(2, weight); // Layer 2 = FullBodyOverride
-           }
-
-           // Animation Event receivers (called by Animation Events)
-           // These methods must be public for Unity Animation Events to find them
-           public void AnimEvent_OnAttackStart()
-           {
-               OnAttackStart?.Invoke();
-           }
-
-           public void AnimEvent_OnHitboxActivate()
-           {
-               OnHitboxActivate?.Invoke();
-           }
-
-           public void AnimEvent_OnHitboxDeactivate()
-           {
-               OnHitboxDeactivate?.Invoke();
-           }
-
-           public void AnimEvent_OnAttackRecoveryStart()
-           {
-               OnAttackRecoveryStart?.Invoke();
-           }
-
-           public void AnimEvent_OnAttackEnd()
-           {
-               OnAttackEnd?.Invoke();
-               SetUpperBodyLayerWeight(0f); // Return upper body to base layer
-           }
-
-           public void AnimEvent_OnHitReactionEnd()
-           {
-               OnHitReactionEnd?.Invoke();
-               SetOverrideLayerWeight(0f); // Return to normal animation
-           }
-
-           public void AnimEvent_OnKnockedDownComplete()
-           {
-               OnKnockedDownComplete?.Invoke();
-           }
-
-           public void AnimEvent_OnGetUpComplete()
-           {
-               OnGetUpComplete?.Invoke();
-               _animator.SetBool(AnimatorParams.KnockedDown, false);
-               SetOverrideLayerWeight(0f);
-           }
-
-           // Debug visualization
-           private void OnValidate()
-           {
-               if (_animator == null)
-                   _animator = GetComponent<Animator>();
-           }
-       }
-   }
-   ```
+   - Create new C# script: `Assets/Knockout/Scripts/Characters/Components/CharacterAnimator.cs`
+   - Inherit from `MonoBehaviour` in the `Knockout.Characters.Components` namespace
+   - Add `[RequireComponent(typeof(Animator))]` attribute
+   - **Create nested static class AnimatorParams** with const string fields for all animator parameter names:
+     - MoveSpeed, MoveDirectionX, MoveDirectionY, AttackTrigger, AttackType, IsBlocking, UpperBodyWeight
+     - HitReaction, HitType, KnockedDown, KnockedOut, OverrideWeight
+     - Purpose: Centralize parameter names, avoid string typos
+   - **Define C# events** for animation callbacks (Phase 2 Task 7 will trigger these):
+     - OnAttackStart, OnHitboxActivate, OnHitboxDeactivate, OnAttackRecoveryStart, OnAttackEnd
+     - OnHitReactionEnd, OnKnockedDownComplete, OnGetUpComplete
+   - **Cache Animator reference** in private field, get via `GetComponent<Animator>()` in Awake
+   - **Implement locomotion methods:**
+     - `SetMovement(Vector2 direction, float speed)`: Set MoveDirectionX/Y and MoveSpeed parameters
+   - **Implement attack methods:**
+     - `TriggerAttack(int attackType)`: Set AttackType and trigger AttackTrigger
+     - `TriggerJab()`, `TriggerHook()`, `TriggerUppercut()`: Convenience wrappers calling TriggerAttack with indices 0, 1, 2
+   - **Implement defense methods:**
+     - `SetBlocking(bool isBlocking)`: Set IsBlocking parameter
+   - **Implement hit reaction methods:**
+     - `TriggerHitReaction(int hitType)`: Set HitType, trigger HitReaction, call SetOverrideLayerWeight(1.0)
+     - `TriggerKnockdown()`: Set KnockedDown bool, enable override layer
+     - `TriggerKnockout()`: Set KnockedOut bool, enable override layer
+   - **Implement layer weight control methods:**
+     - `SetUpperBodyLayerWeight(float weight)`: Set parameter and call `_animator.SetLayerWeight(1, weight)` for UpperBody layer
+     - `SetOverrideLayerWeight(float weight)`: Set parameter and call `_animator.SetLayerWeight(2, weight)` for FullBodyOverride layer
+   - **Implement public Animation Event receiver methods** (Unity Animation Events call these):
+     - `AnimEvent_OnAttackStart()`: Invoke OnAttackStart event
+     - `AnimEvent_OnHitboxActivate()`: Invoke OnHitboxActivate event
+     - `AnimEvent_OnHitboxDeactivate()`: Invoke OnHitboxDeactivate event
+     - `AnimEvent_OnAttackRecoveryStart()`: Invoke OnAttackRecoveryStart event
+     - `AnimEvent_OnAttackEnd()`: Invoke OnAttackEnd event, reset upper body layer weight to 0
+     - `AnimEvent_OnHitReactionEnd()`: Invoke OnHitReactionEnd event, reset override layer weight to 0
+     - `AnimEvent_OnKnockedDownComplete()`: Invoke OnKnockedDownComplete event
+     - `AnimEvent_OnGetUpComplete()`: Invoke OnGetUpComplete event, set KnockedDown to false, reset override weight
+     - **Note:** These methods MUST be public for Unity to find them
+   - **Implement OnValidate()** for editor-time caching of Animator reference
+   - Follow Phase-0 code organization and naming conventions
 
 2. **Add CharacterAnimator to prefabs:**
    - Open PlayerCharacter.prefab
@@ -806,7 +667,6 @@ feat(characters): create CharacterAnimator component
 - Add play mode tests for animator API
 ```
 
-**Estimated Tokens:** ~18,000
 
 ---
 
@@ -958,7 +818,6 @@ feat(animation): add animation events to attack and reaction clips
 - Add play mode test to verify events fire correctly
 ```
 
-**Estimated Tokens:** ~16,000
 
 ---
 
@@ -1147,7 +1006,6 @@ feat(utilities): add animation testing debug script
 - Add to GameplayTest scene for manual animation testing
 ```
 
-**Estimated Tokens:** ~14,000
 
 ---
 

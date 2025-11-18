@@ -98,7 +98,7 @@ CharacterController (coordinator, minimal logic)
 - Event-driven callbacks reduce polling overhead
 
 **Action Maps:**
-- **Gameplay:** Movement (Vector2), Jab, Hook, Uppercut, Block, Dodge
+- **Gameplay:** Movement (Vector2), Jab, Hook, Uppercut, Block
 - **UI:** Pause, Menu navigation (for future menus)
 
 **Implementation Pattern:**
@@ -146,10 +146,9 @@ CharacterController (coordinator, minimal logic)
 - Easy to debug and visualize current state
 
 **States:**
-- **Idle:** Can move, attack, block, dodge
+- **Idle:** Can move, attack, block
 - **Attacking:** Cannot move, cannot attack again, vulnerable to hits (no active block)
 - **Blocking:** Cannot attack, reduced movement, mitigates damage
-- **Dodging:** Cannot attack, invulnerable for dodge duration
 - **Hit Stunned:** Cannot act, brief recovery time
 - **Knocked Down:** Cannot act, longer recovery
 - **Knocked Out:** Cannot act, match over
@@ -752,7 +751,7 @@ private float moveSpeed = 5f;
 **Solution:**
 - Limit input buffer to 2-3 inputs max
 - Clear buffer when hit or knocked down
-- Prioritize defensive inputs (block, dodge) over attacks
+- Prioritize defensive inputs (block) over attacks
 - Implement input timeout (clear after 0.5s if not used)
 
 ### 5. Animation Layer Weight Conflicts
@@ -853,6 +852,29 @@ When adding multiple political characters:
 5. **Visual Customization:** Different materials, models, voice lines
 
 Current architecture supports this through ScriptableObject data-driven design.
+
+### Character Voice Lines & Soundbytes
+
+Character-specific voice recordings are available in `Assets/TrumpSound/` folder. These are **not** game sound effects (punches, impacts), but rather character voice lines for personality and humor. Integration points:
+
+1. **Audio Hook Points:** CharacterAudioPlayer component (Phase 5) provides events for:
+   - Attack execution (taunt/battle cry)
+   - Taking damage (grunt/exclamation)
+   - Knockout (defeat line)
+   - Round win (victory line)
+   - Round start (intro line)
+
+2. **Implementation Approach:**
+   - Create CharacterVoiceData ScriptableObject with AudioClip references
+   - Assign character-specific voice clips per character (Trump, Warren, etc.)
+   - CharacterAudioPlayer randomly selects from available clips for each event
+   - Keep voice lines infrequent (20-30% chance per event) to avoid repetition
+
+3. **Folder Structure:**
+   - Move soundbytes to `Assets/Knockout/Audio/Voices/[CharacterName]/`
+   - Organize by event type (Attack/, Hit/, Victory/, etc.)
+
+**Note:** Voice line integration is optional enhancement, not required for core gameplay. Phase 5 Task 4 sets up the foundation, but full integration can be deferred.
 
 ---
 

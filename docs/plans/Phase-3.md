@@ -13,7 +13,6 @@ Implement the complete combat system including hit detection with hitboxes/hurtb
 - Player can move, attack, block, and damage opponent
 - All tests passing
 
-**Estimated Tokens:** ~105,000
 
 ---
 
@@ -48,227 +47,65 @@ Implement the complete combat system including hit detection with hitboxes/hurtb
 **Implementation Steps:**
 
 1. **Create HitData struct:**
-
-   ```csharp
-   using UnityEngine;
-
-   namespace Knockout.Combat.HitDetection
-   {
-       /// <summary>
-       /// Data structure representing a hit event (passed from attacker to target).
-       /// </summary>
-       public struct HitData
-       {
-           public GameObject Attacker;
-           public float Damage;
-           public float Knockback;
-           public Vector3 HitPoint;
-           public Vector3 HitDirection;
-           public int HitType; // 0=light, 1=medium, 2=heavy
-           public string AttackName;
-
-           public HitData(GameObject attacker, float damage, float knockback, Vector3 hitPoint, Vector3 hitDirection, int hitType, string attackName)
-           {
-               Attacker = attacker;
-               Damage = damage;
-               Knockback = knockback;
-               HitPoint = hitPoint;
-               HitDirection = hitDirection;
-               HitType = hitType;
-               AttackName = attackName;
-           }
-       }
-   }
-   ```
+   - Create new C# file: `Assets/Knockout/Scripts/Combat/HitDetection/HitData.cs`
+   - Define a public struct in the `Knockout.Combat.HitDetection` namespace
+   - Add public fields to represent a hit event:
+     - Attacker (GameObject), Damage (float), Knockback (float)
+     - HitPoint (Vector3), HitDirection (Vector3)
+     - HitType (int, 0=light 1=medium 2=heavy), AttackName (string)
+   - Create a constructor that accepts all fields and initializes them
+   - Purpose: Passed from attacker's hitbox to target's CharacterHealth when collision occurs
 
 2. **Create HurtboxData component:**
-
-   ```csharp
-   using UnityEngine;
-
-   namespace Knockout.Combat.HitDetection
-   {
-       /// <summary>
-       /// Defines a hurt region on a character (head, body, etc.).
-       /// Attached to trigger colliders that detect incoming hits.
-       /// </summary>
-       [RequireComponent(typeof(Collider))]
-       public class HurtboxData : MonoBehaviour
-       {
-           [Header("Hurtbox Properties")]
-           [SerializeField] [Tooltip("Damage multiplier for this region (e.g., head = 1.5x)")]
-           private float damageMultiplier = 1f;
-
-           [SerializeField] [Tooltip("Hit type override (0=light, 1=medium, 2=heavy, -1=use attack's type)")]
-           private int hitTypeOverride = -1;
-
-           [Header("References")]
-           [SerializeField] [Tooltip("The character this hurtbox belongs to")]
-           private GameObject ownerCharacter;
-
-           public float DamageMultiplier => damageMultiplier;
-           public int HitTypeOverride => hitTypeOverride;
-           public GameObject OwnerCharacter => ownerCharacter;
-
-           private void Awake()
-           {
-               // Ensure collider is trigger
-               Collider col = GetComponent<Collider>();
-               if (!col.isTrigger)
-               {
-                   Debug.LogWarning($"[HurtboxData] {gameObject.name} collider should be a trigger. Setting to trigger.");
-                   col.isTrigger = true;
-               }
-           }
-
-           private void OnValidate()
-           {
-               // Auto-assign owner if not set
-               if (ownerCharacter == null)
-                   ownerCharacter = GetComponentInParent<CharacterController>()?.gameObject;
-           }
-       }
-   }
-   ```
+   - Create new C# file: `Assets/Knockout/Scripts/Combat/HitDetection/HurtboxData.cs`
+   - Inherit from `MonoBehaviour` in the `Knockout.Combat.HitDetection` namespace
+   - Add `[RequireComponent(typeof(Collider))]` attribute
+   - Define serialized fields:
+     - damageMultiplier (float, default 1.0) - e.g., head = 1.5x, body = 1.0x
+     - hitTypeOverride (int, default -1) - allows specific body part to force hit type, -1 means use attack's type
+     - ownerCharacter (GameObject reference to character root)
+   - Expose fields as read-only public properties
+   - Implement Awake(): Verify attached collider is set to isTrigger, log warning and fix if not
+   - Implement OnValidate(): Auto-assign ownerCharacter by finding CharacterController in parent if not already set
+   - Follow Phase-0 code conventions
 
 3. **Create HitboxData component:**
-
-   ```csharp
-   using UnityEngine;
-   using System.Collections.Generic;
-   using Knockout.Characters.Data;
-
-   namespace Knockout.Combat.HitDetection
-   {
-       /// <summary>
-       /// Defines a hitbox on an attacking limb (hand, foot, etc.).
-       /// Enabled during attack's active frames, detects collisions with hurtboxes.
-       /// </summary>
-       [RequireComponent(typeof(Collider))]
-       public class HitboxData : MonoBehaviour
-       {
-           [Header("Hitbox Properties")]
-           [SerializeField] [Tooltip("The character this hitbox belongs to")]
-           private GameObject ownerCharacter;
-
-           [Header("Current Attack Data")]
-           private AttackData _currentAttack;
-           private HashSet<GameObject> _hitTargets = new HashSet<GameObject>();
-
-           private Collider _collider;
-
-           public GameObject OwnerCharacter => ownerCharacter;
-
-           private void Awake()
-           {
-               _collider = GetComponent<Collider>();
-
-               // Hitboxes start disabled
-               _collider.enabled = false;
-
-               // Ensure collider is trigger
-               if (!_collider.isTrigger)
-               {
-                   Debug.LogWarning($"[HitboxData] {gameObject.name} collider should be a trigger. Setting to trigger.");
-                   _collider.isTrigger = true;
-               }
-           }
-
-           public void ActivateHitbox(AttackData attackData)
-           {
-               _currentAttack = attackData;
-               _hitTargets.Clear();
-               _collider.enabled = true;
-           }
-
-           public void DeactivateHitbox()
-           {
-               _collider.enabled = false;
-               _currentAttack = null;
-               _hitTargets.Clear();
-           }
-
-           private void OnTriggerEnter(Collider other)
-           {
-               // Check if other collider is a hurtbox
-               HurtboxData hurtbox = other.GetComponent<HurtboxData>();
-               if (hurtbox == null) return;
-
-               // Don't hit self
-               if (hurtbox.OwnerCharacter == ownerCharacter) return;
-
-               // Don't hit same target multiple times in one attack
-               if (_hitTargets.Contains(hurtbox.OwnerCharacter)) return;
-
-               // Register hit
-               _hitTargets.Add(hurtbox.OwnerCharacter);
-
-               // Calculate hit data
-               HitData hitData = CalculateHitData(hurtbox, other.ClosestPoint(transform.position));
-
-               // Send hit event to target
-               SendHitToTarget(hurtbox.OwnerCharacter, hitData);
-           }
-
-           private HitData CalculateHitData(HurtboxData hurtbox, Vector3 hitPoint)
-           {
-               if (_currentAttack == null)
-               {
-                   Debug.LogError("[HitboxData] No current attack data when calculating hit!");
-                   return default;
-               }
-
-               // Calculate damage with hurtbox multiplier
-               float baseDamage = _currentAttack.Damage;
-               float finalDamage = baseDamage * hurtbox.DamageMultiplier;
-
-               // Determine hit direction (from attacker to target)
-               Vector3 hitDirection = (hurtbox.transform.position - transform.position).normalized;
-
-               // Determine hit type
-               int hitType = hurtbox.HitTypeOverride >= 0 ? hurtbox.HitTypeOverride : DetermineHitType(finalDamage);
-
-               return new HitData(
-                   attacker: ownerCharacter,
-                   damage: finalDamage,
-                   knockback: _currentAttack.Knockback,
-                   hitPoint: hitPoint,
-                   hitDirection: hitDirection,
-                   hitType: hitType,
-                   attackName: _currentAttack.AttackName
-               );
-           }
-
-           private int DetermineHitType(float damage)
-           {
-               // Simple damage-based hit type
-               if (damage < 15f) return 0; // Light
-               if (damage < 30f) return 1; // Medium
-               return 2; // Heavy
-           }
-
-           private void SendHitToTarget(GameObject target, HitData hitData)
-           {
-               // Find CharacterHealth component on target
-               var characterHealth = target.GetComponent<Knockout.Characters.Components.CharacterHealth>();
-               if (characterHealth != null)
-               {
-                   characterHealth.TakeDamage(hitData);
-               }
-               else
-               {
-                   Debug.LogWarning($"[HitboxData] Target {target.name} has no CharacterHealth component!");
-               }
-           }
-
-           private void OnValidate()
-           {
-               if (ownerCharacter == null)
-                   ownerCharacter = GetComponentInParent<CharacterController>()?.gameObject;
-           }
-       }
-   }
-   ```
+   - Create new C# file: `Assets/Knockout/Scripts/Combat/HitDetection/HitboxData.cs`
+   - Inherit from `MonoBehaviour` in the `Knockout.Combat.HitDetection` namespace
+   - Add `[RequireComponent(typeof(Collider))]` attribute
+   - Import `System.Collections.Generic` for HashSet
+   - Define serialized field: ownerCharacter (GameObject)
+   - Define private fields:
+     - _currentAttack (AttackData) - stores current attack's data while active
+     - _hitTargets (HashSet<GameObject>) - prevents multiple hits on same target per attack
+     - _collider (Collider) - cached collider reference
+   - Cache collider in Awake(), disable it by default, verify isTrigger is true
+   - Implement `ActivateHitbox(AttackData attackData)` method:
+     - Store attackData in _currentAttack
+     - Clear _hitTargets HashSet
+     - Enable collider
+   - Implement `DeactivateHitbox()` method:
+     - Disable collider
+     - Clear _currentAttack and _hitTargets
+   - Implement `OnTriggerEnter(Collider other)` method:
+     - Check if other has HurtboxData component, return if not
+     - Check if hurtbox belongs to self (ownerCharacter), return if yes (no self-damage)
+     - Check if target already in _hitTargets, return if yes (no multi-hit)
+     - Add target to _hitTargets
+     - Call CalculateHitData() to create HitData struct
+     - Call SendHitToTarget() to deliver hit
+   - Implement `CalculateHitData(HurtboxData hurtbox, Vector3 hitPoint)` private method:
+     - Get base damage from _currentAttack
+     - Multiply by hurtbox.DamageMultiplier for final damage
+     - Calculate hit direction (from hitbox to hurtbox, normalized)
+     - Determine hit type (use hurtbox override if set, otherwise categorize by damage thresholds: <15=light, 15-30=medium, >30=heavy)
+     - Return new HitData struct with all calculated values
+   - Implement `SendHitToTarget(GameObject target, HitData hitData)` private method:
+     - Find CharacterHealth component on target using GetComponent
+     - Call CharacterHealth.TakeDamage(hitData)
+     - Log warning if CharacterHealth not found
+   - Implement OnValidate(): Auto-assign ownerCharacter from parent CharacterController
+   - Follow Phase-0 code organization and naming conventions
 
 **Verification Checklist:**
 - [ ] All three scripts created and compile without errors
@@ -321,7 +158,6 @@ feat(combat): create hit detection data structures
 - Add edit mode tests for hit data
 ```
 
-**Estimated Tokens:** ~12,000
 
 ---
 
@@ -435,60 +271,609 @@ feat(combat): add hitbox and hurtbox colliders to character prefabs
 - Apply setup to both player and AI prefabs
 ```
 
-**Estimated Tokens:** ~10,000
 
 ---
 
-### Task 3-8: Combat System Components (Condensed)
+### Task 3: Create Combat State Machine
 
-**Remaining tasks for Phase 3 (condensed format):**
+**Goal:** Implement a finite state machine to manage combat states and enforce valid transitions between idle, attacking, blocking, hit reactions, and knockouts.
 
-**Task 3: Create Combat State Machine** (~15k tokens)
-- Create `CombatState.cs` abstract base class with Enter/Update/Exit/CanTransitionTo methods
-- Implement states: IdleState, AttackingState, BlockingState, DodgingState, HitStunnedState, KnockedDownState, KnockedOutState
-- Create `CombatStateMachine.cs` to manage state transitions
-- Each state validates transitions and updates CharacterAnimator accordingly
+**Files to Create:**
+- `Assets/Knockout/Scripts/Combat/States/CombatState.cs` (abstract base class)
+- `Assets/Knockout/Scripts/Combat/States/IdleState.cs`
+- `Assets/Knockout/Scripts/Combat/States/AttackingState.cs`
+- `Assets/Knockout/Scripts/Combat/States/BlockingState.cs`
+- `Assets/Knockout/Scripts/Combat/States/HitStunnedState.cs`
+- `Assets/Knockout/Scripts/Combat/States/KnockedDownState.cs`
+- `Assets/Knockout/Scripts/Combat/States/KnockedOutState.cs`
+- `Assets/Knockout/Scripts/Combat/CombatStateMachine.cs`
 
-**Task 4: Create CharacterCombat Component** (~18k tokens)
-- Create `Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs`
-- Manages combat state machine, processes attack inputs, controls hitbox activation
-- Subscribe to CharacterAnimator events (OnHitboxActivate, OnAttackEnd, etc.)
-- Implement methods: ExecuteAttack(AttackData), StartBlocking(), StopBlocking()
-- Activate/deactivate hitboxes via HitboxData references
-- Track current attack for hitbox data
+**Prerequisites:**
+- Task 2 complete (hitboxes/hurtboxes added)
 
-**Task 5: Create CharacterHealth Component** (~16k tokens)
-- Create `Assets/Knockout/Scripts/Characters/Components/CharacterHealth.cs`
-- Manages current health, applies damage, triggers death
-- Implement TakeDamage(HitData) method - apply damage multipliers, blocking reduction
-- Trigger hit reactions based on damage amount
-- Events: OnHealthChanged, OnDeath, OnHitTaken
-- Integration with CharacterAnimator for hit reactions
+**Implementation Steps:**
 
-**Task 6: Create CharacterMovement Component** (~14k tokens)
-- Create `Assets/Knockout/Scripts/Characters/Components/CharacterMovement.cs`
-- Handles locomotion, rotation toward opponent
-- Apply movement input to Rigidbody or Transform
-- Selective root motion application (attacks use root motion, locomotion doesn't)
-- Implement OnAnimatorMove() to control root motion
+1. **Create CombatState abstract class:**
+   - Define interface: `Enter(CharacterCombat)`, `Update(CharacterCombat)`, `Exit(CharacterCombat)`, `CanTransitionTo(CombatState)`
+   - Each state knows which transitions are valid
+   - States can access CharacterCombat to trigger animations, check conditions
 
-**Task 7: Create CharacterInput Component** (~16k tokens)
-- Create `Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs`
-- Subscribe to KnockoutInputActions (from Phase 1)
-- Raise events for movement, attacks, defense that other components subscribe to
-- Enable/disable input based on character state
-- Events: OnMoveInput(Vector2), OnJabPressed, OnHookPressed, OnUppercutPressed, OnBlockPressed/Released, OnDodgePressed
+2. **Implement IdleState:**
+   - Can transition to: AttackingState, BlockingState, HitStunnedState, KnockedDownState, KnockedOutState
+   - Cannot transition to: (already idle)
+   - Update: Check for input to attack or block
 
-**Task 8: Integrate All Components** (~16k tokens)
+3. **Implement AttackingState:**
+   - Can transition to: IdleState (after attack completes), HitStunnedState, KnockedDownState, KnockedOutState
+   - Cannot transition to: AttackingState (no attack canceling), BlockingState (committed to attack)
+   - Enter: Store current attack data, trigger attack animation
+   - Exit: Clear attack data
+
+4. **Implement BlockingState:**
+   - Can transition to: IdleState (release block), HitStunnedState (block broken), KnockedDownState, KnockedOutState
+   - Cannot transition to: AttackingState (can't attack while blocking)
+   - Enter: Trigger block animation, enable damage reduction
+   - Exit: Disable damage reduction
+
+5. **Implement HitStunnedState:**
+   - Can transition to: IdleState (after stun duration), KnockedDownState, KnockedOutState
+   - Cannot transition to: AttackingState, BlockingState (stunned can't act)
+   - Enter: Trigger hit reaction animation
+   - Exit: Reset to idle after animation completes
+
+6. **Implement KnockedDownState:**
+   - Can transition to: IdleState (after get-up animation), KnockedOutState
+   - Cannot transition to: Others (must get up first)
+   - Enter: Trigger knockdown animation
+   - Update: Wait for get-up animation to complete
+
+7. **Implement KnockedOutState:**
+   - Can transition to: Nothing (terminal state)
+   - Enter: Trigger knockout animation, disable character
+
+8. **Create CombatStateMachine:**
+   - Manages current state reference
+   - `ChangeState(CombatState newState)` method validates transition with `CanTransitionTo`
+   - Calls `Exit()` on old state, `Enter()` on new state
+   - `Update()` delegates to current state
+   - Logs warnings for invalid transition attempts
+
+**Verification Checklist:**
+- [ ] All state classes created and compile
+- [ ] State transitions enforce valid combat rules
+- [ ] CombatStateMachine properly manages state changes
+- [ ] Invalid transitions are rejected with warnings
+- [ ] Each state has clear entry/exit behavior
+
+**Testing Instructions:**
+Create edit mode tests for state machine logic:
+
+```csharp
+// File: Assets/Knockout/Tests/EditMode/Combat/CombatStateMachineTests.cs
+[Test]
+public void IdleState_CanTransitionTo_AttackingState()
+{
+    var idleState = new IdleState();
+    var attackingState = new AttackingState();
+    Assert.IsTrue(idleState.CanTransitionTo(attackingState));
+}
+
+[Test]
+public void AttackingState_CannotTransitionTo_BlockingState()
+{
+    var attackingState = new AttackingState();
+    var blockingState = new BlockingState();
+    Assert.IsFalse(attackingState.CanTransitionTo(blockingState));
+}
+```
+
+**Commit Message Template:**
+```
+feat(combat): implement combat state machine
+
+- Create CombatState abstract base class
+- Implement all combat states (Idle, Attacking, Blocking, HitStunned, KnockedDown, KnockedOut)
+- Create CombatStateMachine to manage transitions
+- Enforce valid state transition rules
+- Add edit mode tests for state transitions
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 4: Create CharacterCombat Component
+
+**Goal:** Create the component that manages combat actions, owns the combat state machine, and controls hitbox activation during attacks.
+
+**Files to Create:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs`
+
+**Prerequisites:**
+- Task 3 complete (combat state machine exists)
+- Phase 1 Task 7 complete (AttackData ScriptableObjects exist)
+
+**Implementation Steps:**
+
+1. **Component structure:**
+   - Reference to CharacterAnimator (for triggering animations)
+   - Reference to CombatStateMachine instance
+   - References to hitbox GameObjects (left hand, right hand)
+   - Current AttackData being executed
+   - Events: OnAttackExecuted, OnBlockStarted, OnBlockEnded
+
+2. **Initialize combat system:**
+   - Awake: Cache component references, find hitboxes in children
+   - Start: Initialize state machine with IdleState
+   - Subscribe to CharacterAnimator animation events
+
+3. **Attack execution:**
+   - `ExecuteAttack(AttackData attackData)` method:
+     - Validate can attack (check state machine)
+     - Store current attack data
+     - Transition to AttackingState
+     - Trigger attack animation via CharacterAnimator
+   - Convenience methods: `ExecuteJab()`, `ExecuteHook()`, `ExecuteUppercut()` that load appropriate AttackData
+
+4. **Hitbox management:**
+   - Subscribe to CharacterAnimator.OnHitboxActivate event:
+     - Find appropriate hitbox (based on attack animation)
+     - Call `HitboxData.ActivateHitbox(currentAttackData)`
+   - Subscribe to CharacterAnimator.OnHitboxDeactivate event:
+     - Call `HitboxData.DeactivateHitbox()`
+
+5. **Defense actions:**
+   - `StartBlocking()`: Transition to BlockingState, trigger block animation
+   - `StopBlocking()`: Transition back to IdleState, stop block animation
+
+6. **Handle animation event callbacks:**
+   - OnAttackEnd: Transition back to IdleState, clear current attack data
+   - OnHitReactionEnd: Called by CharacterHealth when hit, updates state machine
+
+7. **State machine integration:**
+   - Update: Call `stateMachine.Update()` each frame
+   - Provide public CurrentState property for other components to check
+
+**Verification Checklist:**
+- [ ] CharacterCombat component created and compiles
+- [ ] Combat state machine properly integrated
+- [ ] Attack execution triggers correct animations
+- [ ] Hitboxes activate/deactivate at correct times
+- [ ] Blocking transitions state correctly
+- [ ] Component added to character prefabs
+
+**Testing Instructions:**
+Create play mode test for combat actions:
+
+```csharp
+// File: Assets/Knockout/Tests/PlayMode/Characters/CharacterCombatTests.cs
+[UnityTest]
+public IEnumerator CharacterCombat_ExecuteAttack_TriggersAnimation()
+{
+    // Setup character with combat component
+    GameObject character = InstantiateCharacterPrefab();
+    CharacterCombat combat = character.GetComponent<CharacterCombat>();
+    AttackData jabData = LoadAttackData("AttackData_Jab");
+
+    yield return null;
+
+    // Execute attack
+    bool attacked = false;
+    combat.OnAttackExecuted += () => attacked = true;
+    combat.ExecuteAttack(jabData);
+
+    yield return new WaitForSeconds(0.1f);
+
+    Assert.IsTrue(attacked);
+    Assert.AreEqual("Attacking", combat.CurrentState.GetType().Name);
+}
+```
+
+**Commit Message Template:**
+```
+feat(combat): create CharacterCombat component
+
+- Implement CharacterCombat component with state machine integration
+- Add attack execution methods (Jab, Hook, Uppercut)
+- Implement hitbox activation control via animation events
+- Add blocking state management
+- Subscribe to CharacterAnimator events for combat flow
+- Add play mode tests for combat actions
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 5: Create CharacterHealth Component
+
+**Goal:** Implement health management, damage calculation with multipliers, and hit reaction triggering.
+
+**Files to Create:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterHealth.cs`
+
+**Prerequisites:**
+- Task 4 complete (CharacterCombat exists)
+- Phase 1 Task 7 complete (CharacterStats ScriptableObject exists)
+
+**Implementation Steps:**
+
+1. **Component properties:**
+   - Reference to CharacterStats (for max health)
+   - Current health value (private, expose via property)
+   - Reference to CharacterAnimator (for hit reactions)
+   - Reference to CharacterCombat (to check if blocking)
+   - Events: OnHealthChanged(float current, float max), OnDeath, OnHitTaken(HitData)
+
+2. **Initialize health:**
+   - Start: Set current health to CharacterStats.MaxHealth
+   - Cache component references
+
+3. **Damage application - TakeDamage(HitData) method:**
+   - Calculate damage multipliers:
+     - Base damage from HitData
+     - Character damage taken multiplier from CharacterStats
+     - Blocking reduction: if CharacterCombat.IsBlocking, multiply by 0.25
+   - Subtract final damage from current health
+   - Clamp health to 0-max range
+   - Raise OnHealthChanged event
+   - Raise OnHitTaken event
+   - Trigger hit reaction or death
+
+4. **Hit reaction selection:**
+   - Based on final damage amount:
+     - < 15 damage: Light hit reaction (HitType = 0)
+     - 15-30 damage: Medium hit reaction (HitType = 1)
+     - > 30 damage: Heavy hit reaction (HitType = 2)
+   - If health reaches 0: Trigger knockout instead of hit reaction
+   - If health < 30 and heavy hit: Consider knockdown
+   - Call CharacterAnimator.TriggerHitReaction(hitType) or TriggerKnockout()
+
+5. **Death handling:**
+   - When health reaches 0:
+     - Trigger knockout animation via CharacterAnimator
+     - Transition CharacterCombat to KnockedOutState
+     - Raise OnDeath event
+     - Disable character input/controls
+
+6. **Public API:**
+   - `float CurrentHealth { get; }` property
+   - `float HealthPercentage { get; }` property (for UI)
+   - `bool IsDead { get; }` property
+   - `void Heal(float amount)` method (for future use)
+
+**Verification Checklist:**
+- [ ] CharacterHealth component created
+- [ ] Damage calculation accounts for all multipliers
+- [ ] Blocking reduces damage correctly (75% reduction)
+- [ ] Hit reactions trigger at appropriate damage thresholds
+- [ ] Death triggers knockout and disables character
+- [ ] Health events fire correctly
+
+**Testing Instructions:**
+
+```csharp
+// File: Assets/Knockout/Tests/PlayMode/Characters/CharacterHealthTests.cs
+[Test]
+public void TakeDamage_WithBlocking_ReducesDamageBy75Percent()
+{
+    var character = CreateTestCharacter();
+    var health = character.GetComponent<CharacterHealth>();
+    var combat = character.GetComponent<CharacterCombat>();
+
+    combat.StartBlocking();
+    health.TakeDamage(new HitData { Damage = 20f });
+
+    Assert.AreEqual(95f, health.CurrentHealth); // 20 * 0.25 = 5 damage
+}
+```
+
+**Commit Message Template:**
+```
+feat(combat): create CharacterHealth component
+
+- Implement health tracking and damage application
+- Calculate damage with blocking and multiplier modifiers
+- Trigger appropriate hit reactions based on damage amount
+- Handle knockout when health reaches zero
+- Add health changed and death events for UI integration
+- Add play mode tests for damage calculation
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 6: Create CharacterMovement Component
+
+**Goal:** Implement locomotion system with movement input processing, rotation, and selective root motion application.
+
+**Files to Create:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterMovement.cs`
+
+**Prerequisites:**
+- Phase 2 complete (animations set up)
+- CharacterAnimator exists
+
+**Implementation Steps:**
+
+1. **Component structure:**
+   - Reference to CharacterAnimator
+   - Reference to Rigidbody (for physics-based movement)
+   - Movement speed from CharacterStats
+   - Current movement input (Vector2)
+   - Facing direction
+
+2. **Movement input processing:**
+   - `SetMovementInput(Vector2 input)` method:
+     - Store input vector
+     - Calculate world-space movement direction
+     - Update CharacterAnimator with movement direction and speed
+
+3. **Apply movement:**
+   - In FixedUpdate (for physics consistency):
+     - Calculate velocity from input and move speed
+     - Apply to Rigidbody: `rigidbody.velocity = new Vector3(moveVelocity.x, rigidbody.velocity.y, moveVelocity.z)`
+     - Alternative: `transform.position += movement * Time.fixedDeltaTime` for non-physics movement
+
+4. **Character rotation:**
+   - `RotateToward(Vector3 target)` method for facing opponent:
+     - Calculate direction to target
+     - Smooth rotation using Quaternion.Slerp
+     - Rotation speed from CharacterStats
+   - Auto-rotate toward opponent during idle/combat
+
+5. **Root motion handling:**
+   - Implement `OnAnimatorMove()` callback:
+     - If CharacterCombat is in AttackingState: Apply animator root motion (for attack momentum)
+     - If in other states: Ignore animator root motion, use transform-based movement
+   - This gives attacks realistic forward movement while keeping locomotion responsive
+
+6. **Movement constraints:**
+   - Check CharacterCombat state before allowing movement
+   - Can move in: IdleState, BlockingState (reduced speed)
+   - Cannot move in: AttackingState, HitStunnedState, KnockedDownState, KnockedOutState
+
+**Verification Checklist:**
+- [ ] CharacterMovement component created
+- [ ] Movement input properly processed
+- [ ] Character moves in world space correctly
+- [ ] Rotation toward opponent works smoothly
+- [ ] Root motion applied during attacks only
+- [ ] Movement disabled during appropriate states
+
+**Testing Instructions:**
+
+```csharp
+[UnityTest]
+public IEnumerator CharacterMovement_ProcessesInput_MovesCharacter()
+{
+    var character = CreateTestCharacter();
+    var movement = character.GetComponent<CharacterMovement>();
+    Vector3 startPos = character.transform.position;
+
+    movement.SetMovementInput(Vector2.up); // Move forward
+    yield return new WaitForSeconds(0.5f);
+
+    Assert.Greater(Vector3.Distance(startPos, character.transform.position), 0.1f);
+}
+```
+
+**Commit Message Template:**
+```
+feat(characters): create CharacterMovement component
+
+- Implement movement input processing and world-space movement
+- Add character rotation toward opponent
+- Implement selective root motion (attacks only)
+- Integrate movement state checks with CharacterCombat
+- Add FixedUpdate physics-based movement
+- Add play mode tests for movement
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 7: Create CharacterInput Component
+
+**Goal:** Connect Unity Input System to character components via event-driven architecture.
+
+**Files to Create:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs`
+
+**Prerequisites:**
+- Phase 1 Task 5 complete (Input System configured)
+- CharacterMovement and CharacterCombat exist
+
+**Implementation Steps:**
+
+1. **Component structure:**
+   - Reference to KnockoutInputActions instance
+   - Events: OnMoveInput(Vector2), OnJabPressed, OnHookPressed, OnUppercutPressed, OnBlockPressed, OnBlockReleased
+   - Input enabled flag (for disabling during certain states)
+
+2. **Initialize Input System:**
+   - Awake: Create KnockoutInputActions instance
+   - OnEnable: Enable input actions, subscribe to all input events
+   - OnDisable: Unsubscribe from events, disable input actions
+
+3. **Subscribe to input actions:**
+   - Movement: `inputActions.Gameplay.Movement.performed += OnMovementInput`
+   - Jab: `inputActions.Gameplay.Jab.performed += OnJabInput`
+   - Hook: `inputActions.Gameplay.Hook.performed += OnHookInput`
+   - Uppercut: `inputActions.Gameplay.Uppercut.performed += OnUppercutInput`
+   - Block: `inputActions.Gameplay.Block.started/canceled += OnBlockInput`
+
+4. **Raise component events:**
+   - Input callbacks convert Input System events to component events
+   - Example: `OnMovementInput(InputAction.CallbackContext ctx) => OnMoveInput?.Invoke(ctx.ReadValue<Vector2>())`
+   - Other components subscribe to these events, not directly to Input System
+
+5. **Input enable/disable:**
+   - `EnableInput()` / `DisableInput()` methods
+   - Call DisableInput when character is knocked out or in certain states
+   - Prevents input processing without unsubscribing from Input System
+
+6. **Input validation:**
+   - Check if input enabled before raising events
+   - Log warnings if attempting to process input while disabled
+
+**Verification Checklist:**
+- [ ] CharacterInput component created
+- [ ] All input actions properly subscribed
+- [ ] Component events fire when inputs received
+- [ ] Input can be enabled/disabled
+- [ ] No direct dependencies on Input System in other components
+
+**Testing Instructions:**
+
+```csharp
+[UnityTest]
+public IEnumerator CharacterInput_JabPressed_RaisesEvent()
+{
+    var character = CreateTestCharacter();
+    var input = character.GetComponent<CharacterInput>();
+
+    bool jabPressed = false;
+    input.OnJabPressed += () => jabPressed = true;
+
+    // Simulate jab input (requires Input System test helpers)
+    SimulateInput(input.InputActions.Gameplay.Jab);
+    yield return null;
+
+    Assert.IsTrue(jabPressed);
+}
+```
+
+**Commit Message Template:**
+```
+feat(input): create CharacterInput component
+
+- Implement Input System integration via event-driven architecture
+- Subscribe to all gameplay inputs (movement, attacks, defense)
+- Raise component events for other components to consume
+- Add input enable/disable functionality
+- Decouple Input System from combat/movement components
+- Add play mode tests for input event flow
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 8: Integrate All Components
+
+**Goal:** Wire all components together, configure character prefabs, and test the complete combat system.
+
+**Files to Modify:**
+- `Assets/Knockout/Scripts/Characters/CharacterController.cs`
+- `Assets/Knockout/Prefabs/Characters/PlayerCharacter.prefab`
+- `Assets/Knockout/Prefabs/Characters/AICharacter.prefab`
+
+**Prerequisites:**
+- Tasks 3-7 complete (all components exist)
+
+**Implementation Steps:**
+
+1. **Update CharacterController:**
+   - Add private fields for all components:
+     - `_characterAnimator`, `_characterInput`, `_characterMovement`, `_characterCombat`, `_characterHealth`
+   - Cache all components in Awake via `GetComponent<T>()`
+   - Add public properties to expose components if needed
+   - Remove any component caching already done in Phase 1
+
+2. **Wire up event connections:**
+
+   **CharacterInput → CharacterMovement:**
+   ```csharp
+   _characterInput.OnMoveInput += _characterMovement.SetMovementInput;
+   ```
+
+   **CharacterInput → CharacterCombat:**
+   ```csharp
+   _characterInput.OnJabPressed += () => _characterCombat.ExecuteJab();
+   _characterInput.OnHookPressed += () => _characterCombat.ExecuteHook();
+   _characterInput.OnUppercutPressed += () => _characterCombat.ExecuteUppercut();
+   _characterInput.OnBlockPressed += _characterCombat.StartBlocking;
+   _characterInput.OnBlockReleased += _characterCombat.StopBlocking;
+   ```
+
+   **CharacterAnimator ← CharacterCombat:**
+   - Already wired in CharacterCombat component
+
+   **CharacterHealth → CharacterInput:**
+   ```csharp
+   _characterHealth.OnDeath += _characterInput.DisableInput;
+   ```
+
+3. **Add components to PlayerCharacter prefab:**
+   - Open prefab in Unity
+   - Add CharacterInput component (player-controlled)
+   - Add CharacterMovement component
+   - Add CharacterCombat component
+   - Add CharacterHealth component
+   - Assign CharacterStats reference to CharacterHealth
+   - Save prefab
+
+4. **Add components to AICharacter prefab:**
+   - Open prefab in Unity
+   - Do NOT add CharacterInput (AI will use CharacterAI in Phase 4)
+   - Add CharacterMovement component
+   - Add CharacterCombat component
+   - Add CharacterHealth component
+   - Assign CharacterStats reference
+   - Save prefab
+
+5. **Test full integration:**
+   - Open GameplayTest scene
+   - Place PlayerCharacter at PlayerSpawnPoint
+   - Place AICharacter at AISpawnPoint (stationary for now)
+   - Enter Play mode
+   - Test: WASD movement, mouse clicks for attacks, Shift for block
+   - Test: Attacks trigger animations, hitboxes activate, damage applies
+   - Test: AI character takes damage and plays hit reactions
+   - Test: Health reaches zero triggers knockout
+
+**Verification Checklist:**
+- [ ] All components wired together in CharacterController
+- [ ] Event connections properly established
+- [ ] PlayerCharacter prefab has all components
+- [ ] AICharacter prefab has all components (except Input)
+- [ ] Player can control character with keyboard/mouse
+- [ ] Attacks damage opponent and trigger hit reactions
+- [ ] Blocking reduces damage
+- [ ] Knockout occurs at zero health
+- [ ] No console errors during gameplay
+
+**Testing Instructions:**
+Full integration test - manual gameplay testing required. Create test scene with both characters and verify all systems work together.
+
+**Commit Message Template:**
+```
+feat(integration): wire all character components together
+
 - Update CharacterController to cache all component references
-- Wire up event subscriptions between components
-- CharacterInput → CharacterMovement (movement)
-- CharacterInput → CharacterCombat (attacks, defense)
-- CharacterCombat → CharacterAnimator (trigger animations)
-- CharacterAnimator → CharacterCombat (animation events)
-- HitboxData → CharacterHealth (damage)
-- Add all components to character prefabs
-- Test full integration with player-controlled character attacking stationary AI
+- Wire event connections between Input, Movement, Combat, Health
+- Add all components to PlayerCharacter prefab
+- Add components to AICharacter prefab (no Input for AI)
+- Test full combat integration in GameplayTest scene
+- Player can now fight stationary AI opponent
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
