@@ -20,11 +20,12 @@ This plan assumes Unity-ready character models and animations (FBX/GLB format) a
   - Test Framework 1.1.31
 
 ### Assets Required
-- Character model(s) in FBX or GLB format with humanoid rig
+- Elizabeth Warren character model (FBX format with humanoid rig) - located in `Assets/Elizabeth Warren caricature/`
+- Boxing animations from AAAnimators pack - located in `Assets/AAAnimators_Boxing_basic1.1/`
 - Animation clips for full fighting moveset:
   - Locomotion: Idle, walk forward/back, strafe left/right
   - Attacks: Jab, hook, uppercut (left and right variants)
-  - Defense: Block high/low, dodge left/right/back
+  - Defense: Block high/low
   - Reactions: Hit reactions (head, body, heavy), knockdown, knockout
   - Transitions: Attack recovery, guard enter/exit
 
@@ -37,23 +38,19 @@ This plan assumes Unity-ready character models and animations (FBX/GLB format) a
 
 ## Phase Summary
 
-| Phase | Goal | Estimated Tokens |
-|-------|------|------------------|
-| Phase 0 | Architecture & Design Foundation | N/A (Reference) |
-| **Phase 0.5** | **Asset Migration & Organization** | **~30,000** |
-| Phase 1 | Project Structure & Asset Integration | ~70,000 (reduced) |
-| Phase 2 | Animation System & State Machine | ~110,000 |
-| Phase 3 | Combat Mechanics & Hit Detection | ~105,000 |
-| Phase 4 | AI Opponent Foundation | ~90,000 |
-| Phase 5 | Polish, Testing & Integration | ~85,000 |
-
-**Total Estimated Tokens:** ~490,000 (6 phases: 1 migration + 5 implementation)
+| Phase | Goal |
+|-------|------|
+| Phase 0 | Architecture & Design Foundation (Reference) |
+| Phase 1 | Project Structure & Asset Integration |
+| Phase 2 | Animation System & State Machine |
+| Phase 3 | Combat Mechanics & Hit Detection |
+| Phase 4 | AI Opponent Foundation |
+| Phase 5 | Polish, Testing & Integration |
 
 ## Phase Navigation
 
 - **[Phase 0: Architecture & Design Foundation](Phase-0.md)** - Read this first for architectural context
-- **[Phase 0.5: Asset Migration & Organization](Phase-0.5.md)** - ⭐ START HERE - Reorganize existing assets
-- **[Phase 1: Project Structure & Asset Integration](Phase-1.md)** - Input System and component setup
+- **[Phase 1: Project Structure & Asset Integration](Phase-1.md)** - ⭐ START HERE - Migrate assets, create project structure
 - **[Phase 2: Animation System & State Machine](Phase-2.md)** - Animator controller and animation logic
 - **[Phase 3: Combat Mechanics & Hit Detection](Phase-3.md)** - Fighting mechanics and damage system
 - **[Phase 4: AI Opponent Foundation](Phase-4.md)** - Basic AI behavior and decision-making
@@ -75,6 +72,6 @@ Each phase should be completed sequentially. Within each phase:
 
 **Start here:**
 1. **[Phase 0: Architecture & Design Foundation](Phase-0.md)** - Read for architectural context
-2. **[Phase 0.5: Asset Migration & Organization](Phase-0.5.md)** - ⭐ Begin implementation here
+2. **[Phase 1: Project Structure & Asset Integration](Phase-1.md)** - ⭐ Begin implementation here
 
-Phase 0 contains all architectural decisions, design patterns, and conventions. Phase 0.5 reorganizes your existing assets (boxing animations, character models) into the proper structure before building new systems.
+Phase 0 contains all architectural decisions, design patterns, and conventions. Phase 1 will migrate your existing assets (boxing animations, Elizabeth Warren character model) into the organized structure and set up the project foundation.

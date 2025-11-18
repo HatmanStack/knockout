@@ -12,7 +12,6 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 - AI opponent provides engaging gameplay challenge
 - All tests passing
 
-**Estimated Tokens:** ~90,000
 
 ---
 
@@ -54,7 +53,42 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
    - Updates context each frame
    - Calls currentState.Update(), handles state changes
 
-**Estimated Tokens:** ~12,000
+**Verification Checklist:**
+- [ ] AIContext struct created with all necessary data
+- [ ] AIState abstract class defines proper interface
+- [ ] AIStateMachine manages state transitions
+- [ ] All files compile without errors
+
+**Testing Instructions:**
+
+```csharp
+// File: Assets/Knockout/Tests/EditMode/AI/AIStateMachineTests.cs
+[Test]
+public void AIStateMachine_UpdateContext_CalculatesDistanceToPlayer()
+{
+    var context = new AIContext();
+    var aiPos = Vector3.zero;
+    var playerPos = new Vector3(5f, 0f, 0f);
+
+    context.UpdateFrom(aiPos, playerPos, 100f, 100f, false);
+
+    Assert.AreEqual(5f, context.DistanceToPlayer, 0.1f);
+}
+```
+
+**Commit Message Template:**
+```
+feat(ai): create AI state machine foundation
+
+- Add AIContext struct for decision-making data
+- Create AIState abstract base class
+- Implement AIStateMachine for state management
+- Add edit mode tests for state machine logic
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -106,7 +140,44 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 - Transition to Observe when threat passes
 - Transition to Retreat if health critical (< 20%)
 
-**Estimated Tokens:** ~25,000
+**Verification Checklist:**
+- [ ] All five AI states created (Observe, Approach, Retreat, Attack, Defend)
+- [ ] Each state implements Enter/Update/Exit/CanTransitionTo
+- [ ] Distance-based decision logic works correctly
+- [ ] Attack selection based on distance
+- [ ] States integrate with CharacterCombat and CharacterMovement
+
+**Testing Instructions:**
+
+```csharp
+// File: Assets/Knockout/Tests/PlayMode/AI/AIStatesTests.cs
+[Test]
+public void AttackState_ChoosesUppercut_WhenCloseRange()
+{
+    var attackState = new AttackState();
+    var context = new AIContext { DistanceToPlayer = 1.0f };
+
+    int selectedAttack = attackState.ChooseAttack(context);
+
+    Assert.AreEqual(AttackType.Uppercut, selectedAttack);
+}
+```
+
+**Commit Message Template:**
+```
+feat(ai): implement all AI behavioral states
+
+- Create ObserveState for maintaining optimal distance
+- Create ApproachState for closing distance to player
+- Create RetreatState for escaping when low health
+- Create AttackState with distance-based attack selection
+- Create DefendState for blocking incoming attacks
+- Add play mode tests for state decision logic
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -147,7 +218,48 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
    - Attack accuracy (randomization percentage)
    - Aggression level (affects state transition thresholds)
 
-**Estimated Tokens:** ~20,000
+**Verification Checklist:**
+- [ ] CharacterAI component created and compiles
+- [ ] AI finds player target on Start
+- [ ] AI state machine updates correctly
+- [ ] AI actions call appropriate character components
+- [ ] Decision-making runs at configured interval (not every frame)
+- [ ] Difficulty parameters adjustable via Inspector
+
+**Testing Instructions:**
+
+```csharp
+// File: Assets/Knockout/Tests/PlayMode/Characters/CharacterAITests.cs
+[UnityTest]
+public IEnumerator CharacterAI_FindsPlayerTarget_OnStart()
+{
+    var player = CreatePlayerCharacter();
+    player.tag = "Player";
+    var aiCharacter = CreateAICharacter();
+    var ai = aiCharacter.GetComponent<CharacterAI>();
+
+    yield return null; // Wait for Start()
+
+    Assert.IsNotNull(ai.Target);
+    Assert.AreEqual(player, ai.Target);
+}
+```
+
+**Commit Message Template:**
+```
+feat(ai): create CharacterAI component
+
+- Implement CharacterAI with state machine integration
+- Add player target detection and tracking
+- Create decision-making update loop (10Hz)
+- Add AI action methods (move, attack, defend)
+- Implement difficulty tuning parameters
+- Add play mode tests for AI behavior
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -158,16 +270,43 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 **Files to Modify:**
 - `Assets/Knockout/Prefabs/Characters/AICharacter.prefab`
 
+**Prerequisites:**
+- Task 3 complete (CharacterAI component exists)
+
 **Implementation Steps:**
 
-1. Open AICharacter prefab
-2. Remove CharacterInput component (if present)
+1. Open AICharacter prefab in Unity
+2. Remove CharacterInput component (if present from Phase 3)
 3. Add CharacterAI component
-4. Assign target reference to player (can be set at runtime via tag)
-5. Configure AI parameters (reaction time, aggression)
+4. Assign target reference to player (or leave null for runtime detection)
+5. Configure AI parameters:
+   - Reaction Time: 0.1s (default)
+   - Attack Accuracy: 70% (default)
+   - Aggression Level: Medium
 6. Save prefab
 
-**Estimated Tokens:** ~5,000
+**Verification Checklist:**
+- [ ] CharacterInput removed from AICharacter prefab
+- [ ] CharacterAI added and configured
+- [ ] AI parameters set to reasonable defaults
+- [ ] Prefab saved without errors
+
+**Testing Instructions:**
+Manual verification - open AICharacter prefab in Inspector and verify CharacterAI component is present with correct settings.
+
+**Commit Message Template:**
+```
+refactor(ai): configure AICharacter prefab with AI component
+
+- Remove CharacterInput from AICharacter
+- Add CharacterAI component
+- Configure default AI parameters
+- AI ready for gameplay testing
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -178,15 +317,64 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 **Files to Create:**
 - `Assets/Knockout/Scripts/AI/AITargetDetector.cs` (helper class)
 
-**Implementation:**
+**Prerequisites:**
+- None (standalone utility class)
 
-- Use Physics.OverlapSphere to detect nearby characters
-- Filter for player tag
-- Cache target reference
-- Update target if player changes (for future multi-opponent support)
-- Fallback: Find player by tag on Start()
+**Implementation Steps:**
 
-**Estimated Tokens:** ~8,000
+1. **Create AITargetDetector class:**
+   - Static utility methods for finding targets
+   - `FindPlayerCharacter()`: Uses GameObject.FindWithTag("Player")
+   - `FindNearestCharacter(Vector3 position, float radius)`: Uses Physics.OverlapSphere
+   - Optional: Caching to avoid repeated searches
+
+2. **Target detection patterns:**
+   - Primary: Tag-based search (fastest for single player)
+   - Fallback: Physics overlap (for future multi-opponent)
+   - Cache player reference after first find
+   - Validate target still exists before using
+
+3. **Integration with CharacterAI:**
+   - CharacterAI calls AITargetDetector.FindPlayerCharacter() in Start()
+   - Stores reference to target
+   - Optional: Re-check target validity each frame (target could be destroyed)
+
+**Verification Checklist:**
+- [ ] AITargetDetector class created
+- [ ] FindPlayerCharacter method works
+- [ ] FindNearestCharacter method works
+- [ ] CharacterAI successfully finds target
+
+**Testing Instructions:**
+
+```csharp
+[Test]
+public void AITargetDetector_FindsPlayerByTag()
+{
+    var player = new GameObject("Player");
+    player.tag = "Player";
+
+    GameObject found = AITargetDetector.FindPlayerCharacter();
+
+    Assert.AreEqual(player, found);
+    Object.DestroyImmediate(player);
+}
+```
+
+**Commit Message Template:**
+```
+feat(ai): add AI target detection system
+
+- Create AITargetDetector utility class
+- Implement tag-based player finding
+- Implement physics-based nearest character finding
+- Add target caching for performance
+- Add unit tests for target detection
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -194,15 +382,65 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 
 **Goal:** Make AI smoothly move and rotate toward/away from player.
 
-**Implementation in CharacterAI:**
+**Files to Modify:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterAI.cs`
 
-- Calculate direction vector to/from player
-- Convert to movement input (Vector2) for CharacterMovement
-- Smooth rotation toward player using Quaternion.Slerp
-- Maintain optimal distance (strafe around player when in range)
-- Stop movement when executing attacks
+**Prerequisites:**
+- Tasks 1-5 complete
+- CharacterMovement component exists
 
-**Estimated Tokens:** ~10,000
+**Implementation Steps:**
+
+1. **Add movement methods to CharacterAI:**
+   - `MoveToward(Vector3 target)`:
+     - Calculate direction from AI to target
+     - Convert 3D direction to 2D input (X/Z plane)
+     - Call `characterMovement.SetMovementInput(input2D)`
+   - `MoveAwayFrom(Vector3 target)`:
+     - Calculate direction from target to AI (inverse)
+     - Call CharacterMovement with negative direction
+
+2. **Rotation toward player:**
+   - In Update: Always face player character
+   - `characterMovement.RotateToward(playerTarget.position)`
+   - Keeps AI facing player even while strafing
+
+3. **Distance maintenance (for ObserveState):**
+   - Calculate current distance to player
+   - If distance > 3.5: Move toward
+   - If distance < 2.5: Move away
+   - Else: Strafe (random left/right movement)
+   - This creates natural "circling" behavior
+
+4. **Stop movement during attacks:**
+   - Check `characterCombat.CurrentState` before moving
+   - Only allow movement in: Idle, Blocking states
+   - Set movement input to Vector2.zero during attacks
+
+**Verification Checklist:**
+- [ ] AI moves toward player when far away
+- [ ] AI moves away when too close
+- [ ] AI rotates to face player
+- [ ] AI strafes at optimal distance
+- [ ] Movement stops during attacks
+
+**Testing Instructions:**
+Manual gameplay test - AI should smoothly approach, retreat, and circle around player.
+
+**Commit Message Template:**
+```
+feat(ai): implement AI movement and rotation
+
+- Add MoveToward and MoveAwayFrom methods
+- Implement rotation to face player
+- Add distance maintenance logic
+- Prevent movement during attack animations
+- AI now moves naturally during combat
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
@@ -210,15 +448,70 @@ Implement a basic but functional AI opponent using a Finite State Machine that c
 
 **Goal:** Prevent AI from being too predictable with timing and pattern variation.
 
-**Implementation:**
+**Files to Modify:**
+- `Assets/Knockout/Scripts/Characters/Components/CharacterAI.cs`
+- All AI state files (add randomization)
 
-- Randomize state duration (min/max ranges)
-- Random attack selection within distance constraints
-- Occasional "mistakes" (suboptimal choices 20% of the time)
-- Variable reaction time (slight delay before responding to player actions)
-- Add personality parameters (aggressive vs defensive)
+**Prerequisites:**
+- Tasks 1-6 complete
 
-**Estimated Tokens:** ~10,000
+**Implementation Steps:**
+
+1. **State duration randomization:**
+   - Each state has min/max duration (e.g., Observe: 1-3 seconds)
+   - Random.Range to pick actual duration on Enter()
+   - Prevents AI from transitioning at exact same time intervals
+
+2. **Attack selection randomization:**
+   - In AttackState.ChooseAttack():
+     - 70% of time: Choose optimal attack for distance
+     - 30% of time: Choose random valid attack
+   - Makes AI less predictable while still being smart
+
+3. **Reaction delay:**
+   - Add small random delay (0.1-0.3s) before responding to player actions
+   - E.g., when player attacks, wait random delay before transitioning to DefendState
+   - Makes AI feel less robotic
+
+4. **Occasional mistakes:**
+   - 20% chance to make suboptimal choice:
+     - Attack when should defend
+     - Approach when should retreat (if health not critical)
+     - Use wrong attack for distance
+   - Creates openings for player, makes AI beatable
+
+5. **Personality parameters (optional):**
+   - Aggression slider (0-1):
+     - High: Attack more, defend less, approach aggressively
+     - Low: Defend more, retreat more, cautious approach
+   - Affects state transition thresholds
+   - Can create different AI difficulty levels
+
+**Verification Checklist:**
+- [ ] AI behavior varies between matches
+- [ ] State transitions not perfectly timed
+- [ ] Attack selection includes randomness
+- [ ] AI makes occasional mistakes
+- [ ] AI feels less robotic and more human-like
+
+**Testing Instructions:**
+Play multiple matches - AI should behave differently each time, with varied timing and decisions.
+
+**Commit Message Template:**
+```
+feat(ai): add behavior variation and personality
+
+- Randomize AI state duration for unpredictability
+- Add attack selection randomization (70/30 split)
+- Implement reaction delay to player actions
+- Add occasional mistakes for balanced difficulty
+- Add optional aggression parameter for tuning
+- AI now feels more human-like and engaging
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
