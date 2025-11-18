@@ -6,8 +6,8 @@ namespace Knockout.Tests.EditMode.Input
 {
     /// <summary>
     /// Tests for Input Actions asset configuration.
-    /// NOTE: These tests will fail until the Input Actions asset is created in Unity Editor.
-    /// See Assets/Knockout/Scripts/Input/INPUT_SYSTEM_SETUP.md for setup instructions.
+    /// NOTE: Run Tools > Knockout > Generate Input Actions to create the asset.
+    /// Then manually generate the C# class in Inspector before running these tests.
     /// </summary>
     public class InputActionsTests
     {
@@ -21,53 +21,41 @@ namespace Knockout.Tests.EditMode.Input
 
             // Assert
             Assert.IsNotNull(inputActions,
-                "Input Actions asset should exist. See INPUT_SYSTEM_SETUP.md for creation instructions.");
+                "Input Actions asset should exist. Run Tools > Knockout > Generate Input Actions if missing.");
         }
 
         [Test]
-        [Ignore("Test will pass once Input Actions asset is created in Unity Editor")]
-        public void InputActions_ContainsGameplayActionMap()
+        public void InputActions_HasGameplayActionMap()
         {
-            // This test validates the generated C# class exists
-            // It's currently ignored because the asset must be created in Unity Editor first
-
-            // TODO: Uncomment once KnockoutInputActions.cs is generated
-            /*
             // Arrange
-            var inputActions = new KnockoutInputActions();
+            var inputActions = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsPath);
+            Assert.IsNotNull(inputActions, "Input Actions asset must exist");
 
             // Act
-            var gameplayMap = inputActions.Gameplay;
+            var gameplayMap = inputActions.FindActionMap("Gameplay");
 
             // Assert
             Assert.IsNotNull(gameplayMap, "Gameplay action map should exist");
-            Assert.IsNotNull(gameplayMap.Movement, "Movement action should exist");
-            Assert.IsNotNull(gameplayMap.Jab, "Jab action should exist");
-            Assert.IsNotNull(gameplayMap.Hook, "Hook action should exist");
-            Assert.IsNotNull(gameplayMap.Uppercut, "Uppercut action should exist");
-            Assert.IsNotNull(gameplayMap.Block, "Block action should exist");
-            */
+            Assert.IsNotNull(gameplayMap.FindAction("Movement"), "Movement action should exist");
+            Assert.IsNotNull(gameplayMap.FindAction("Jab"), "Jab action should exist");
+            Assert.IsNotNull(gameplayMap.FindAction("Hook"), "Hook action should exist");
+            Assert.IsNotNull(gameplayMap.FindAction("Uppercut"), "Uppercut action should exist");
+            Assert.IsNotNull(gameplayMap.FindAction("Block"), "Block action should exist");
         }
 
         [Test]
-        [Ignore("Test will pass once Input Actions asset is created in Unity Editor")]
-        public void InputActions_ContainsUIActionMap()
+        public void InputActions_HasUIActionMap()
         {
-            // This test validates the generated C# class exists
-            // It's currently ignored because the asset must be created in Unity Editor first
-
-            // TODO: Uncomment once KnockoutInputActions.cs is generated
-            /*
             // Arrange
-            var inputActions = new KnockoutInputActions();
+            var inputActions = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputActionsPath);
+            Assert.IsNotNull(inputActions, "Input Actions asset must exist");
 
             // Act
-            var uiMap = inputActions.UI;
+            var uiMap = inputActions.FindActionMap("UI");
 
             // Assert
             Assert.IsNotNull(uiMap, "UI action map should exist");
-            Assert.IsNotNull(uiMap.Pause, "Pause action should exist");
-            */
+            Assert.IsNotNull(uiMap.FindAction("Pause"), "Pause action should exist");
         }
     }
 }

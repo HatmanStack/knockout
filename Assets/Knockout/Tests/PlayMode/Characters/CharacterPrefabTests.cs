@@ -9,8 +9,7 @@ namespace Knockout.Tests.PlayMode.Characters
 {
     /// <summary>
     /// Tests for character prefab structure and components.
-    /// NOTE: These tests will fail until prefabs are created in Unity Editor.
-    /// See Assets/Knockout/Prefabs/Characters/PREFAB_SETUP.md for setup instructions.
+    /// NOTE: Run Tools > Knockout > Generate Character Prefabs to create the prefabs.
     /// </summary>
     public class CharacterPrefabTests
     {
@@ -25,7 +24,7 @@ namespace Knockout.Tests.PlayMode.Characters
 
             // Assert
             Assert.IsNotNull(prefab,
-                "PlayerCharacter prefab should exist. See PREFAB_SETUP.md for creation instructions.");
+                "PlayerCharacter prefab should exist. Run Tools > Knockout > Generate Character Prefabs if missing.");
         }
 
         [Test]
@@ -36,16 +35,12 @@ namespace Knockout.Tests.PlayMode.Characters
 
             // Assert
             Assert.IsNotNull(prefab,
-                "AICharacter prefab should exist. See PREFAB_SETUP.md for creation instructions.");
+                "AICharacter prefab should exist. Run Tools > Knockout > Generate Character Prefabs if missing.");
         }
 
         [UnityTest]
-        [Ignore("Test will pass once PlayerCharacter prefab is created")]
         public IEnumerator PlayerCharacterPrefab_HasRequiredComponents()
         {
-            // TODO: Uncomment once prefab is created
-
-            /*
             // Arrange
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
             Assert.IsNotNull(prefab, "Prefab should exist");
@@ -78,18 +73,11 @@ namespace Knockout.Tests.PlayMode.Characters
 
             // Cleanup
             Object.Destroy(instance);
-            */
-
-            yield return null;
         }
 
         [UnityTest]
-        [Ignore("Test will pass once AICharacter prefab is created")]
         public IEnumerator AICharacterPrefab_HasRequiredComponents()
         {
-            // TODO: Uncomment once prefab is created
-
-            /*
             // Arrange
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(AIPrefabPath);
             Assert.IsNotNull(prefab, "Prefab should exist");
@@ -106,9 +94,6 @@ namespace Knockout.Tests.PlayMode.Characters
 
             // Cleanup
             Object.Destroy(instance);
-            */
-
-            yield return null;
         }
     }
 }

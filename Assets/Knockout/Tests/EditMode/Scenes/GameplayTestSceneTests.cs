@@ -8,8 +8,7 @@ namespace Knockout.Tests.EditMode.Scenes
 {
     /// <summary>
     /// Tests for GameplayTest scene structure and configuration.
-    /// NOTE: These tests will fail until the scene is created in Unity Editor.
-    /// See Assets/Knockout/Scenes/SCENE_SETUP.md for setup instructions.
+    /// NOTE: Run Tools > Knockout > Generate GameplayTest Scene to create the scene.
     /// </summary>
     public class GameplayTestSceneTests
     {
@@ -23,38 +22,34 @@ namespace Knockout.Tests.EditMode.Scenes
 
             // Assert
             Assert.IsNotNull(scene,
-                "GameplayTest scene should exist. See SCENE_SETUP.md for creation instructions.");
+                "GameplayTest scene should exist. Run Tools > Knockout > Generate GameplayTest Scene if missing.");
         }
 
         [Test]
-        [Ignore("Test will pass once GameplayTest scene is created")]
         public void GameplayTestScene_ContainsRequiredObjects()
         {
-            // TODO: Uncomment once scene is created
-
-            /*
             // Arrange
-            EditorSceneManager.OpenScene(ScenePath);
+            var originalScene = EditorSceneManager.GetActiveScene();
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
 
             // Act & Assert
             Assert.IsNotNull(GameObject.Find("Ground"), "Scene should contain Ground plane");
             Assert.IsNotNull(GameObject.Find("PlayerSpawnPoint"), "Scene should contain PlayerSpawnPoint");
             Assert.IsNotNull(GameObject.Find("AISpawnPoint"), "Scene should contain AISpawnPoint");
 
-            CinemachineVirtualCamera vcam = Object.FindObjectOfType<CinemachineVirtualCamera>();
-            Assert.IsNotNull(vcam, "Scene should contain Cinemachine virtual camera");
-            */
+            // Cleanup - restore original scene
+            if (!string.IsNullOrEmpty(originalScene.path))
+            {
+                EditorSceneManager.OpenScene(originalScene.path, OpenSceneMode.Single);
+            }
         }
 
         [Test]
-        [Ignore("Test will pass once GameplayTest scene is created")]
         public void GameplayTestScene_SpawnPointsAreFacingEachOther()
         {
-            // TODO: Uncomment once scene is created
-
-            /*
             // Arrange
-            EditorSceneManager.OpenScene(ScenePath);
+            var originalScene = EditorSceneManager.GetActiveScene();
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
 
             // Act
             GameObject playerSpawn = GameObject.Find("PlayerSpawnPoint");
@@ -71,7 +66,12 @@ namespace Knockout.Tests.EditMode.Scenes
             // AISpawnPoint at (5, 0, 0) facing left (-90 degrees)
             Assert.AreEqual(5f, aiSpawn.transform.position.x, 0.1f, "AISpawnPoint X position");
             Assert.AreEqual(270f, aiSpawn.transform.eulerAngles.y, 1f, "AISpawnPoint rotation (270 = -90)");
-            */
+
+            // Cleanup - restore original scene
+            if (!string.IsNullOrEmpty(originalScene.path))
+            {
+                EditorSceneManager.OpenScene(originalScene.path, OpenSceneMode.Single);
+            }
         }
     }
 }

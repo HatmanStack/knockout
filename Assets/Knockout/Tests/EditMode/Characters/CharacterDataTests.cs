@@ -79,11 +79,9 @@ namespace Knockout.Tests.EditMode.Characters
         }
 
         [Test]
-        [Ignore("Asset creation must be done in Unity Editor - see SCRIPTABLE_OBJECTS_SETUP.md")]
         public void BaseCharacterStats_Asset_Exists()
         {
-            // This test will pass once the asset is created in Unity Editor
-            // See Assets/Knockout/Scripts/Characters/Data/SCRIPTABLE_OBJECTS_SETUP.md
+            // Run Tools > Knockout > Generate ScriptableObject Assets if this test fails
 
             // Arrange
             string assetPath = "Assets/Knockout/Scripts/Characters/Data/BaseCharacterStats.asset";
@@ -92,17 +90,15 @@ namespace Knockout.Tests.EditMode.Characters
             CharacterStats stats = AssetDatabase.LoadAssetAtPath<CharacterStats>(assetPath);
 
             // Assert
-            Assert.IsNotNull(stats, "BaseCharacterStats asset should exist");
+            Assert.IsNotNull(stats, "BaseCharacterStats asset should exist. Run Tools > Knockout > Generate ScriptableObject Assets if missing.");
             Assert.AreEqual(100f, stats.MaxHealth, "MaxHealth should be 100");
             Assert.AreEqual(5f, stats.MoveSpeed, "MoveSpeed should be 5");
         }
 
         [Test]
-        [Ignore("Asset creation must be done in Unity Editor - see SCRIPTABLE_OBJECTS_SETUP.md")]
         public void AttackData_Jab_Asset_Exists()
         {
-            // This test will pass once the asset is created in Unity Editor
-            // See Assets/Knockout/Scripts/Characters/Data/SCRIPTABLE_OBJECTS_SETUP.md
+            // Run Tools > Knockout > Generate ScriptableObject Assets if this test fails
 
             // Arrange
             string assetPath = "Assets/Knockout/Scripts/Characters/Data/AttackData_Jab.asset";
@@ -111,7 +107,7 @@ namespace Knockout.Tests.EditMode.Characters
             AttackData attack = AssetDatabase.LoadAssetAtPath<AttackData>(assetPath);
 
             // Assert
-            Assert.IsNotNull(attack, "AttackData_Jab asset should exist");
+            Assert.IsNotNull(attack, "AttackData_Jab asset should exist. Run Tools > Knockout > Generate ScriptableObject Assets if missing.");
             Assert.AreEqual("Jab", attack.AttackName);
             Assert.AreEqual(10f, attack.Damage);
             Assert.AreEqual(15, attack.TotalFrames, "Total frames should be 6+3+6=15");
