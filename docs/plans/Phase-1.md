@@ -2,18 +2,17 @@
 
 ## Phase Goal
 
-Establish the Unity project folder structure, import and configure character models and animations, create the test scene, and set up the Unity Input System. By the end of this phase, you will have a basic character prefab that can be placed in a scene and is ready for animation hookup in Phase 2.
+Migrate existing assets into organized folder structure, configure the Elizabeth Warren character model and boxing animations, create the test scene, and set up the Unity Input System. By the end of this phase, you will have a basic character prefab that can be placed in a scene and is ready for animation hookup in Phase 2.
 
 **Success Criteria:**
 - Unity project follows the folder structure defined in Phase 0
-- Character model imported and configured with Humanoid rig
-- All animation clips imported and properly looped/configured
+- Elizabeth Warren character model migrated and configured with Humanoid rig
+- Boxing animation clips migrated, retargeted, and properly configured
+- Legacy scripts archived for reference
 - Test scene created with basic environment (ground plane, lighting, camera)
 - Player and AI character prefabs created
 - Input System configured with action maps for movement and combat
 - All tests passing (infrastructure tests)
-
-**Estimated Tokens:** ~95,000
 
 ---
 
@@ -23,8 +22,8 @@ Establish the Unity project folder structure, import and configure character mod
 - Read Phase 0 thoroughly
 
 ### External Dependencies
-- Character model files (FBX/GLB) with Humanoid rig
-- Animation clip files (FBX/GLB) for full fighting moveset
+- Elizabeth Warren character model already in project: `Assets/Elizabeth Warren caricature/Mecanim Elizabeth Warren rigged 1.fbx`
+- Boxing animations already in project: `Assets/AAAnimators_Boxing_basic1.1/Animations/*.fbx`
 - Unity 2021.3.8f1 LTS installed
 - IDE configured (Visual Studio or Rider)
 
@@ -103,29 +102,31 @@ feat(structure): create project folder hierarchy
 - Create folders for Animations, Materials, Models, Prefabs, Scenes, Scripts, Tests
 - Add .gitkeep files for empty folders to ensure git tracking
 - Follow architecture structure from Phase-0.md
-```
 
-**Estimated Tokens:** ~2,000
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
-### Task 2: Import and Configure Character Model
+### Task 2: Migrate and Configure Elizabeth Warren Character Model
 
-**Goal:** Import the character model (FBX/GLB), configure it with Unity's Humanoid rig, and verify the rig is correctly mapped for animation retargeting.
+**Goal:** Migrate the Elizabeth Warren character model to the organized folder structure, configure it with Unity's Humanoid rig, and verify the rig is correctly mapped for animation retargeting.
 
 **Files to Create/Modify:**
-- `Assets/Knockout/Models/Characters/BaseCharacter/BaseCharacter.fbx` (imported asset)
+- `Assets/Knockout/Models/Characters/BaseCharacter/ElizabethWarren.fbx` (migrated asset)
+- Associated materials and textures
 - Model import settings (configured via Inspector)
 
 **Prerequisites:**
 - Task 1 complete (folder structure exists)
-- Character model file available
 
 **Implementation Steps:**
 
-1. **Import the character model:**
-   - Copy the character FBX/GLB file into `Assets/Knockout/Models/Characters/BaseCharacter/`
-   - Unity will auto-import it
+1. **Migrate the character model:**
+   - Copy `Assets/Elizabeth Warren caricature/Mecanim Elizabeth Warren rigged 1.fbx` to `Assets/Knockout/Models/Characters/BaseCharacter/ElizabethWarren.fbx`
+   - Unity will automatically update the asset
    - Wait for import to complete
 
 2. **Configure import settings:**
@@ -141,16 +142,15 @@ feat(structure): create project folder hierarchy
    - Optional bones (if present): Toes, Eyes, Jaw
    - Fix any red (missing) or yellow (incorrect) mappings
 
-4. **Configure model scale and materials:**
-   - In "Model" tab, verify Scale Factor is appropriate (usually 1.0 or 0.01 depending on source)
-   - In "Materials" tab, set Material Creation Mode to "Standard" or "Universal Render Pipeline" (URP)
-   - Check "Extract Textures..." if materials are embedded
-   - Extract materials to `Assets/Knockout/Materials/Characters/`
-   - Extract textures to `Assets/Knockout/Models/Characters/BaseCharacter/Textures/`
+4. **Migrate textures and materials:**
+   - Copy textures from `Assets/Elizabeth Warren caricature/` to `Assets/Knockout/Models/Characters/BaseCharacter/Textures/`
+   - Copy materials from `Assets/Elizabeth Warren caricature/Materials/` to `Assets/Knockout/Materials/Characters/`
+   - Update material references in Inspector if needed (should auto-update)
 
-5. **Create Avatar asset:**
-   - Avatar asset should be auto-created by Unity when rig type is set to Humanoid
-   - Verify it appears as a sub-asset of the model file
+5. **Verify Avatar asset:**
+   - Avatar asset should already exist from original import
+   - Verify it appears as a sub-asset of the migrated model file
+   - Avatar should still be configured as Humanoid after migration
 
 **Verification Checklist:**
 - [ ] Model imports without errors (check Console)
@@ -166,20 +166,16 @@ Create edit mode test to verify model import:
 ```csharp
 // File: Assets/Knockout/Tests/EditMode/Characters/CharacterModelTests.cs
 [Test]
-public void BaseCharacterModel_Imports_WithHumanoidAvatar()
+public void ElizabethWarrenModel_HasHumanoidAvatar()
 {
-    // Arrange
-    string modelPath = "Assets/Knockout/Models/Characters/BaseCharacter/BaseCharacter.fbx";
-
-    // Act
+    string modelPath = "Assets/Knockout/Models/Characters/BaseCharacter/ElizabethWarren.fbx";
     GameObject model = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
     Animator animator = model.GetComponent<Animator>();
 
-    // Assert
-    Assert.IsNotNull(model, "Model should exist at path");
-    Assert.IsNotNull(animator, "Model should have Animator component");
-    Assert.IsTrue(animator.avatar.isHuman, "Avatar should be Humanoid type");
-    Assert.IsTrue(animator.avatar.isValid, "Avatar should be valid");
+    Assert.IsNotNull(model);
+    Assert.IsNotNull(animator);
+    Assert.IsTrue(animator.avatar.isHuman);
+    Assert.IsTrue(animator.avatar.isValid);
 }
 ```
 
@@ -187,75 +183,67 @@ Run test via Window > General > Test Runner > EditMode > Run All.
 
 **Commit Message Template:**
 ```
-feat(models): import and configure base character model
+feat(models): migrate Elizabeth Warren character model
 
-- Import BaseCharacter.fbx with Humanoid rig
-- Configure Avatar bone mapping
-- Extract materials to Materials/Characters/
-- Extract textures to Models/Characters/BaseCharacter/Textures/
-- Add edit mode test to verify model import
+- Migrate Elizabeth Warren model to Knockout/Models/Characters/BaseCharacter/
+- Verify Humanoid rig and Avatar configuration
+- Migrate materials to Knockout/Materials/Characters/
+- Migrate textures to BaseCharacter/Textures/
+- Add edit mode test to verify model configuration
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
-
-**Estimated Tokens:** ~5,000
 
 ---
 
-### Task 3: Import and Configure Animation Clips
+### Task 3: Migrate and Configure Boxing Animation Clips
 
-**Goal:** Import all animation clips for the full fighting moveset, configure loop settings, and organize them in the project structure.
+**Goal:** Migrate boxing animations from the AAAnimators pack to the organized structure, retarget them to Elizabeth Warren, and configure loop settings.
 
 **Files to Create/Modify:**
-- `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/` (multiple animation clip assets)
+- `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/` (migrated animation clips)
 
 **Prerequisites:**
-- Task 2 complete (character model imported)
-- Animation clip files available (FBX/GLB format)
+- Task 2 complete (Elizabeth Warren model migrated)
 
 **Implementation Steps:**
 
-1. **Import animation files:**
-   - Copy all animation FBX/GLB files into `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/`
-   - Unity will auto-import each file
+1. **Migrate animation files:**
+   - Copy all `.fbx` files from `Assets/AAAnimators_Boxing_basic1.1/Animations/` to `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/`
+   - Unity will automatically re-import each file
 
-2. **Configure each animation clip:**
-   - For **locomotion animations** (Idle, Walk, Run, Strafe):
-     - Select the FBX in Project window
-     - In Inspector, go to "Rig" tab, set Animation Type to "Humanoid"
-     - Go to "Animation" tab
-     - Enable "Loop Time"
-     - Disable "Root Transform Position (Y)" baking (keep feet planted)
-     - Enable "Root Transform Rotation" baking if character should face forward
-     - Set "Root Transform Position (XZ)" based on animation (bake for in-place, don't bake for moving)
-     - Click "Apply"
+2. **Retarget animations to Elizabeth Warren:**
+   - Select each animation file in the new location
+   - In Inspector → Rig tab:
+     - Animation Type: "Humanoid"
+     - Avatar Definition: "Copy from Other Avatar"
+     - Source: Select Elizabeth Warren's Avatar (from ElizabethWarren.fbx)
+   - Click "Apply"
 
-   - For **attack animations** (Jab, Hook, Uppercut):
-     - Set Animation Type to "Humanoid"
-     - **Disable** "Loop Time"
-     - **Enable** "Root Transform Position (XZ)" baking (we'll apply root motion selectively in code)
-     - Disable "Root Transform Position (Y)" baking
-     - Enable "Root Transform Rotation" baking
-     - Click "Apply"
+3. **Configure loop settings by animation type:**
 
-   - For **defense animations** (Block, Dodge):
-     - Set Animation Type to "Humanoid"
-     - "Block" should have Loop Time enabled (held animation)
-     - "Dodge" should have Loop Time disabled (quick motion)
-     - Configure root transform baking similarly to attacks
-     - Click "Apply"
+   **Looping animations** (Idle, Block, Win):
+   - Inspector → Animation tab → Loop Time: ✓ enabled
 
-   - For **reaction animations** (Hit reactions, Knockdown, Knockout):
-     - Set Animation Type to "Humanoid"
-     - Disable Loop Time (all are one-shot)
-     - Enable root motion baking for knockback effects
-     - Click "Apply"
+   **Attack animations** (Jab, Hook, Uppercut):
+   - Loop Time: ✗ disabled
+   - Root Transform Position (XZ): Baked INTO Pose (we'll apply root motion selectively)
+   - Root Transform Position (Y): Original (keep feet planted)
+   - Root Transform Rotation: Baked INTO Pose
+
+   **Hit reaction animations** (Hit reactions, Knockdown, Knockout):
+   - Loop Time: ✗ disabled
+   - Enable root motion baking for knockback effects
 
 3. **Verify animation clip extraction:**
    - Each imported FBX should show an animation clip as a sub-asset (triangle icon to expand)
    - If multiple clips are in one FBX, configure each clip separately in the Animation tab list
 
-4. **Rename clips for clarity:**
-   - If FBX filenames aren't descriptive, rename the extracted clips
-   - Use naming: `Idle`, `WalkForward`, `WalkBack`, `StrafeLeft`, `StrafeRight`, `Run`, `JabLeft`, `JabRight`, `HookLeft`, `HookRight`, `UppercutLeft`, `UppercutRight`, `Block`, `DodgeLeft`, `DodgeRight`, `DodgeBack`, `HitReactionLight`, `HitReactionMedium`, `HitReactionHeavy`, `Knockdown`, `GetUp`, `Knockout`
+4. **Rename clips for clarity (optional):**
+   - If FBX filenames aren't descriptive, rename the extracted clips for consistency
+   - Suggested naming: `Idle`, `WalkForward`, `WalkBack`, `StrafeLeft`, `StrafeRight`, `JabLeft`, `JabRight`, `HookLeft`, `HookRight`, `UppercutLeft`, `UppercutRight`, `Block`, `HitReactionLight`, `HitReactionMedium`, `HitReactionHeavy`, `Knockdown`, `GetUp`, `Knockout`
 
 5. **Test animations individually:**
    - Create a temporary test scene
@@ -311,30 +299,108 @@ Run test in EditMode Test Runner.
 
 **Commit Message Template:**
 ```
-feat(animations): import and configure character animation clips
+feat(animations): migrate and configure boxing animation clips
 
-- Import all locomotion, attack, defense, and reaction animations
-- Configure loop settings per animation type
+- Migrate 24 boxing animations from AAAnimators pack
+- Retarget all animations to Elizabeth Warren avatar
+- Configure loop settings (idle/block loop, attacks single-play)
 - Set root motion baking for attacks and reactions
-- Organize clips in AnimationClips/ folder
 - Add edit mode test to verify required clips exist
-```
 
-**Estimated Tokens:** ~8,000
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
-### Task 4: Set Up Input System
+### Task 4: Archive Legacy Scripts
 
-**Goal:** Create an Input Actions asset defining all player inputs (movement, attacks, defense) and configure the Input System for the project.
+**Goal:** Move existing scripts to Legacy folder for reference, clearing the way for the new component-based architecture.
+
+**Files to Move:**
+- All scripts from `Assets/Scripts/` directory
+- Root-level scripts: `Assets/NightScript.cs`, `Assets/timecontroller.cs`
 
 **Files to Create:**
-- `Assets/Knockout/Scripts/Input/KnockoutInputActions.inputactions` (Input Actions asset)
-- `Assets/Knockout/Scripts/Input/KnockoutInputActions.cs` (auto-generated C# wrapper)
+- `Assets/Legacy/README.txt` - Documentation of archived code
+
+**Prerequisites:**
+- Tasks 1-3 complete (asset migration done)
+
+**Implementation Steps:**
+
+1. **Create Legacy folder:**
+   - In Unity Project window, create `Assets/Legacy/` folder at root level
+
+2. **Move existing scripts:**
+   - Select all files in `Assets/Scripts/` folder
+   - Right-click → Cut (or drag to Legacy folder)
+   - Unity will move scripts and update any existing references
+   - Move `Assets/NightScript.cs` to `Assets/Legacy/`
+   - Move `Assets/timecontroller.cs` to `Assets/Legacy/`
+
+3. **Delete empty Scripts folder:**
+   - Remove the now-empty `Assets/Scripts/` folder
+   - New scripts will go in `Assets/Knockout/Scripts/` instead
+
+4. **Create documentation:**
+   - Create `Assets/Legacy/README.txt` with contents:
+   ```
+   Legacy Scripts Archive
+
+   These scripts are from the original project before the component-based
+   character system refactor. They are kept for reference only.
+
+   Key scripts:
+   - PlayerController.cs: Old input handling (used Input.GetAxis)
+   - BossLookDirection.cs: Camera/look logic
+   - RotateCamera.cs: Camera controls
+
+   Do not modify these files. New implementations are in Assets/Knockout/Scripts/
+   ```
+
+5. **Note expected warnings:**
+   - Console will show warnings about missing script components on GameObjects
+   - This is normal and expected - those components will be replaced in later phases
+   - Warnings are not errors
+
+**Verification Checklist:**
+- [ ] All scripts moved to `Assets/Legacy/`
+- [ ] `Assets/Scripts/` folder removed
+- [ ] README.txt created in Legacy folder
+- [ ] Console shows warnings (not errors) about missing components
+- [ ] No compilation errors
+
+**Testing Instructions:**
+Check Unity Console - should have warnings about missing script references, but no compilation errors.
+
+**Commit Message Template:**
+```
+refactor(scripts): archive legacy scripts for reference
+
+- Move all existing scripts to Assets/Legacy/
+- Create README documenting legacy code purpose
+- Clear way for new component-based architecture
+- Expected warnings about missing script components are normal
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+---
+
+### Task 5: Create Test Scene
+
+**Goal:** Set up a basic test scene for character development with ground plane, lighting, and camera configured with Cinemachine.
+
+**Files to Create:**
+- `Assets/Knockout/Scenes/GameplayTest.unity` (new scene)
 
 **Prerequisites:**
 - Task 1 complete (folder structure exists)
-- Unity Input System package installed (verify in Package Manager)
+- Cinemachine package installed (verify in Package Manager)
 
 **Implementation Steps:**
 
@@ -377,10 +443,6 @@ feat(animations): import and configure character animation clips
    - Binding: Left Shift (Keyboard)
    - Binding: East Button (Gamepad) - B on Xbox, Circle on PS
 
-   **Dodge (Button):**
-   - Binding: Space (Keyboard)
-   - Binding: Left Shoulder (Gamepad) - LB on Xbox, L1 on PS
-
 5. **Configure UI Action Map:**
    - Select "UI" action map
    - Add action: `Pause` (Button)
@@ -409,7 +471,7 @@ feat(animations): import and configure character animation clips
 **Verification Checklist:**
 - [ ] Input System is active input handling method (verify in Project Settings)
 - [ ] `KnockoutInputActions.inputactions` exists
-- [ ] Gameplay action map contains: Movement, Jab, Hook, Uppercut, Block, Dodge
+- [ ] Gameplay action map contains: Movement, Jab, Hook, Uppercut, Block
 - [ ] UI action map contains: Pause
 - [ ] C# class generated at correct path
 - [ ] No compilation errors
@@ -442,13 +504,12 @@ public void InputActions_ContainsGameplayActionMap()
     var gameplayMap = inputActions.Gameplay;
 
     // Assert
-    Assert.IsNotNull(gameplayMap, "Gameplay action map should exist");
-    Assert.IsNotNull(gameplayMap.Movement, "Movement action should exist");
-    Assert.IsNotNull(gameplayMap.Jab, "Jab action should exist");
-    Assert.IsNotNull(gameplayMap.Hook, "Hook action should exist");
-    Assert.IsNotNull(gameplayMap.Uppercut, "Uppercut action should exist");
-    Assert.IsNotNull(gameplayMap.Block, "Block action should exist");
-    Assert.IsNotNull(gameplayMap.Dodge, "Dodge action should exist");
+    Assert.IsNotNull(gameplayMap);
+    Assert.IsNotNull(gameplayMap.Movement);
+    Assert.IsNotNull(gameplayMap.Jab);
+    Assert.IsNotNull(gameplayMap.Hook);
+    Assert.IsNotNull(gameplayMap.Uppercut);
+    Assert.IsNotNull(gameplayMap.Block);
 }
 ```
 
@@ -459,18 +520,20 @@ Run tests in EditMode Test Runner.
 feat(input): set up Input System with action maps
 
 - Create KnockoutInputActions.inputactions asset
-- Define Gameplay action map (Movement, Jab, Hook, Uppercut, Block, Dodge)
+- Define Gameplay action map (Movement, Jab, Hook, Uppercut, Block)
 - Define UI action map (Pause)
 - Configure keyboard and gamepad bindings
 - Generate C# wrapper class
 - Add edit mode tests for Input Actions
-```
 
-**Estimated Tokens:** ~10,000
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
-### Task 5: Create Test Scene
+### Task 6: Create Test Scene
 
 **Goal:** Set up a basic test scene for character development with ground plane, lighting, and camera configured with Cinemachine.
 
@@ -608,11 +671,10 @@ feat(scenes): create gameplay test scene
 - Add play mode test to verify scene structure
 ```
 
-**Estimated Tokens:** ~12,000
 
 ---
 
-### Task 6: Create Base Character Prefab
+### Task 7: Create Base Character Prefab
 
 **Goal:** Create a prefab for the base character with model, Animator component, and placeholder components for future implementation.
 
@@ -757,11 +819,10 @@ feat(prefabs): create player and AI character prefabs
 - Add play mode tests to verify prefab components
 ```
 
-**Estimated Tokens:** ~15,000
 
 ---
 
-### Task 7: Create Character Data ScriptableObjects
+### Task 8: Create Character Data ScriptableObjects
 
 **Goal:** Create ScriptableObject classes for character stats and attack data, and create initial data assets for the base character.
 
@@ -780,103 +841,28 @@ feat(prefabs): create player and AI character prefabs
 
 1. **Create CharacterStats ScriptableObject:**
    - Create new C# script: `Assets/Knockout/Scripts/Characters/Data/CharacterStats.cs`
-   - Define ScriptableObject with character attributes:
-
-   ```csharp
-   using UnityEngine;
-
-   namespace Knockout.Characters.Data
-   {
-       /// <summary>
-       /// Defines character attributes like health, speed, and damage modifiers.
-       /// </summary>
-       [CreateAssetMenu(fileName = "CharacterStats", menuName = "Knockout/Character Stats")]
-       public class CharacterStats : ScriptableObject
-       {
-           [Header("Health")]
-           [SerializeField] [Tooltip("Maximum health points")]
-           private float maxHealth = 100f;
-
-           [Header("Movement")]
-           [SerializeField] [Range(1f, 10f)] [Tooltip("Movement speed multiplier")]
-           private float moveSpeed = 5f;
-
-           [SerializeField] [Range(1f, 20f)] [Tooltip("Rotation speed in degrees per second")]
-           private float rotationSpeed = 10f;
-
-           [Header("Combat")]
-           [SerializeField] [Range(0.5f, 2f)] [Tooltip("Outgoing damage multiplier")]
-           private float damageMultiplier = 1f;
-
-           [SerializeField] [Range(0.5f, 2f)] [Tooltip("Incoming damage multiplier (lower = more resistant)")]
-           private float damageTakenMultiplier = 1f;
-
-           // Public properties (read-only)
-           public float MaxHealth => maxHealth;
-           public float MoveSpeed => moveSpeed;
-           public float RotationSpeed => rotationSpeed;
-           public float DamageMultiplier => damageMultiplier;
-           public float DamageTakenMultiplier => damageTakenMultiplier;
-       }
-   }
-   ```
+   - Inherit from `ScriptableObject` in the `Knockout.Characters.Data` namespace
+   - Add `[CreateAssetMenu]` attribute to enable creation via Unity's Create menu
+   - Define serialized fields for character properties:
+     - **Health:** maxHealth (float, default 100)
+     - **Movement:** moveSpeed (float, range 1-10), rotationSpeed (float, range 1-20)
+     - **Combat:** damageMultiplier (float, range 0.5-2), damageTakenMultiplier (float, range 0.5-2)
+   - Use `[Header]`, `[Tooltip]`, and `[Range]` attributes for Inspector organization (see Phase-0 conventions)
+   - Expose all fields as read-only public properties (using C# expression-bodied members)
+   - Use `[SerializeField] private` pattern for fields, not public fields
 
 2. **Create AttackData ScriptableObject:**
    - Create new C# script: `Assets/Knockout/Scripts/Characters/Data/AttackData.cs`
-   - Define ScriptableObject with attack properties:
-
-   ```csharp
-   using UnityEngine;
-
-   namespace Knockout.Characters.Data
-   {
-       /// <summary>
-       /// Defines properties of an attack: damage, knockback, frame data, animation.
-       /// </summary>
-       [CreateAssetMenu(fileName = "AttackData", menuName = "Knockout/Attack Data")]
-       public class AttackData : ScriptableObject
-       {
-           [Header("Identity")]
-           [SerializeField] [Tooltip("Attack name (e.g., Jab, Hook)")]
-           private string attackName = "Attack";
-
-           [Header("Damage")]
-           [SerializeField] [Tooltip("Base damage amount")]
-           private float damage = 10f;
-
-           [SerializeField] [Tooltip("Knockback force applied on hit")]
-           private float knockback = 1f;
-
-           [Header("Frame Data (at 60fps)")]
-           [SerializeField] [Tooltip("Frames before hitbox activates")]
-           private int startupFrames = 6;
-
-           [SerializeField] [Tooltip("Frames where hitbox is active")]
-           private int activeFrames = 3;
-
-           [SerializeField] [Tooltip("Frames after hitbox deactivates")]
-           private int recoveryFrames = 6;
-
-           [Header("Animation")]
-           [SerializeField] [Tooltip("Animator parameter name to trigger this attack")]
-           private string animationTrigger = "AttackTrigger";
-
-           [SerializeField] [Tooltip("Attack type index (0=jab, 1=hook, 2=uppercut)")]
-           private int attackTypeIndex = 0;
-
-           // Public properties
-           public string AttackName => attackName;
-           public float Damage => damage;
-           public float Knockback => knockback;
-           public int StartupFrames => startupFrames;
-           public int ActiveFrames => activeFrames;
-           public int RecoveryFrames => recoveryFrames;
-           public int TotalFrames => startupFrames + activeFrames + recoveryFrames;
-           public string AnimationTrigger => animationTrigger;
-           public int AttackTypeIndex => attackTypeIndex;
-       }
-   }
-   ```
+   - Inherit from `ScriptableObject` in the `Knockout.Characters.Data` namespace
+   - Add `[CreateAssetMenu]` attribute for Unity Create menu integration
+   - Define serialized fields for attack properties:
+     - **Identity:** attackName (string)
+     - **Damage:** damage (float), knockback (float)
+     - **Frame Data:** startupFrames (int), activeFrames (int), recoveryFrames (int)
+     - **Animation:** animationTrigger (string), attackTypeIndex (int, 0=jab 1=hook 2=uppercut)
+   - Expose all fields as read-only public properties
+   - Add calculated property: `TotalFrames` (returns sum of startup + active + recovery)
+   - Follow Phase-0 code organization and naming conventions
 
 3. **Create BaseCharacterStats asset:**
    - In Project window, navigate to `Assets/Knockout/Scripts/Characters/Data/`
@@ -986,11 +972,10 @@ feat(data): create ScriptableObjects for character stats and attacks
 - Add edit mode tests to verify data assets
 ```
 
-**Estimated Tokens:** ~18,000
 
 ---
 
-### Task 8: Create Character Controller Foundation Script
+### Task 9: Create Character Controller Foundation Script
 
 **Goal:** Create the main CharacterController component that will coordinate all character subsystems (animation, input, movement, combat). This is a minimal foundation script with no functionality yet.
 
@@ -1004,97 +989,24 @@ feat(data): create ScriptableObjects for character stats and attacks
 
 1. **Create CharacterController.cs:**
    - Create new C# script: `Assets/Knockout/Scripts/Characters/CharacterController.cs`
-   - Implement basic coordinator structure:
-
-   ```csharp
-   using UnityEngine;
-   using Knockout.Characters.Data;
-
-   namespace Knockout.Characters
-   {
-       /// <summary>
-       /// Main coordinator component for character behavior.
-       /// Manages references to character subsystems and coordinates their interactions.
-       /// </summary>
-       [RequireComponent(typeof(Animator))]
-       [RequireComponent(typeof(Rigidbody))]
-       public class CharacterController : MonoBehaviour
-       {
-           [Header("Character Data")]
-           [SerializeField] [Tooltip("Character stats (health, speed, damage)")]
-           private CharacterStats characterStats;
-
-           [Header("Component References")]
-           // These will be populated in Phase 2-4 as components are created
-           // private CharacterAnimator _characterAnimator;
-           // private CharacterInput _characterInput;
-           // private CharacterMovement _characterMovement;
-           // private CharacterCombat _characterCombat;
-           // private CharacterHealth _characterHealth;
-
-           // Cached Unity components
-           private Animator _animator;
-           private Rigidbody _rigidbody;
-
-           // Public properties
-           public CharacterStats Stats => characterStats;
-           public Animator Animator => _animator;
-           public Rigidbody Rigidbody => _rigidbody;
-
-           private void Awake()
-           {
-               CacheComponents();
-               ValidateSetup();
-           }
-
-           private void CacheComponents()
-           {
-               _animator = GetComponent<Animator>();
-               _rigidbody = GetComponent<Rigidbody>();
-           }
-
-           private void ValidateSetup()
-           {
-               if (characterStats == null)
-               {
-                   Debug.LogError($"[CharacterController] {gameObject.name} is missing CharacterStats reference!", this);
-               }
-
-               if (_animator == null)
-               {
-                   Debug.LogError($"[CharacterController] {gameObject.name} is missing Animator component!", this);
-               }
-
-               if (_animator != null && !_animator.avatar.isHuman)
-               {
-                   Debug.LogError($"[CharacterController] {gameObject.name} Animator must use Humanoid avatar!", this);
-               }
-
-               if (_rigidbody == null)
-               {
-                   Debug.LogError($"[CharacterController] {gameObject.name} is missing Rigidbody component!", this);
-               }
-           }
-
-           private void Start()
-           {
-               // Future: Initialize character subsystems
-               // _characterAnimator?.Initialize(this);
-               // _characterInput?.Initialize(this);
-               // etc.
-           }
-
-           private void OnValidate()
-           {
-               // Editor-time validation
-               if (characterStats == null)
-               {
-                   Debug.LogWarning($"[CharacterController] {gameObject.name} should have CharacterStats assigned.");
-               }
-           }
-       }
-   }
-   ```
+   - Inherit from `MonoBehaviour` in the `Knockout.Characters` namespace
+   - Add `[RequireComponent]` attributes for Animator and Rigidbody (ensures dependencies)
+   - Define serialized field for CharacterStats reference with `[SerializeField] private` pattern
+   - Add commented placeholders for future component references (will be added in Phases 2-4):
+     - CharacterAnimator, CharacterInput, CharacterMovement, CharacterCombat, CharacterHealth
+   - Create private fields to cache Unity components: Animator, Rigidbody
+   - Expose cached components and Stats as public read-only properties
+   - Implement `Awake()` method:
+     - Call `CacheComponents()` to store references to Animator and Rigidbody via `GetComponent<T>()`
+     - Call `ValidateSetup()` to check all required components and data exist
+   - Implement `ValidateSetup()` method:
+     - Check CharacterStats is assigned, log error if null
+     - Check Animator exists, log error if null
+     - Check Animator has Humanoid avatar, log error if not
+     - Check Rigidbody exists, log error if null
+   - Implement `Start()` method with commented placeholders for future subsystem initialization
+   - Implement `OnValidate()` method for editor-time warnings if CharacterStats missing
+   - Follow Phase-0 code organization pattern and naming conventions
 
 2. **Add CharacterController to prefabs:**
    - Open PlayerCharacter.prefab
@@ -1168,7 +1080,6 @@ feat(characters): create CharacterController foundation script
 - Add play mode test to verify initialization
 ```
 
-**Estimated Tokens:** ~12,000
 
 ---
 
@@ -1180,11 +1091,12 @@ Before proceeding to Phase 2, verify the following:
 - [ ] Task 1: Folder structure created and matches Phase 0
 - [ ] Task 2: Character model imported with Humanoid rig
 - [ ] Task 3: All animation clips imported and configured
-- [ ] Task 4: Input System set up with action maps
-- [ ] Task 5: Test scene created with environment and camera
-- [ ] Task 6: Player and AI character prefabs created
-- [ ] Task 7: CharacterStats and AttackData ScriptableObjects created
-- [ ] Task 8: CharacterController foundation script created
+- [ ] Task 4: Legacy scripts archived for reference
+- [ ] Task 5: Input System set up with action maps
+- [ ] Task 6: Test scene created with environment and camera
+- [ ] Task 7: Player and AI character prefabs created
+- [ ] Task 8: CharacterStats and AttackData ScriptableObjects created
+- [ ] Task 9: CharacterController foundation script created
 
 ### Integration Points
 - [ ] Character prefabs can be instantiated in test scene
