@@ -26,8 +26,10 @@ namespace Knockout.Characters
         private Animator _animator;
         private Rigidbody _rigidbody;
 
+        // Phase 2 components
+        private Knockout.Characters.Components.CharacterAnimator _characterAnimator;
+
         // TODO: Add component references in future phases
-        // private CharacterAnimator _characterAnimator;
         // private CharacterInput _characterInput;
         // private CharacterMovement _characterMovement;
         // private CharacterCombat _characterCombat;
@@ -50,6 +52,11 @@ namespace Knockout.Characters
         /// Cached Rigidbody component.
         /// </summary>
         public new Rigidbody rigidbody => _rigidbody;
+
+        /// <summary>
+        /// Character animator component (Phase 2).
+        /// </summary>
+        public Knockout.Characters.Components.CharacterAnimator CharacterAnimator => _characterAnimator;
 
         #endregion
 
@@ -92,9 +99,12 @@ namespace Knockout.Characters
             _animator = GetComponent<Animator>();
             _rigidbody = GetComponent<Rigidbody>();
 
+            // Phase 2 components
+            _characterAnimator = GetComponent<Knockout.Characters.Components.CharacterAnimator>();
+
             // TODO: Cache custom components in future phases
-            // _characterAnimator = GetComponent<CharacterAnimator>();
             // _characterInput = GetComponent<CharacterInput>();
+            // _characterMovement = GetComponent<CharacterMovement>();
             // etc.
         }
 
