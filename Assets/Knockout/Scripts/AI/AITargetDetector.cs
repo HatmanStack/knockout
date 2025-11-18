@@ -33,7 +33,9 @@ namespace Knockout.AI
             }
             else
             {
+                #if UNITY_EDITOR
                 Debug.Log($"[AITargetDetector] Found player character: {_cachedPlayer.name}");
+                #endif
             }
 
             return _cachedPlayer;

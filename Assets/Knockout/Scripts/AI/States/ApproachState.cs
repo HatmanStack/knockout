@@ -22,7 +22,9 @@ namespace Knockout.AI.States
         public override void Enter(AIContext context)
         {
             _approachDuration = Random.Range(MIN_APPROACH_DURATION, MAX_APPROACH_DURATION);
+            #if UNITY_EDITOR
             Debug.Log($"[AI] Entering ApproachState - Moving toward player for up to {_approachDuration:F2}s");
+            #endif
         }
 
         public override AIState Update(AIContext context)

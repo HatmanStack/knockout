@@ -26,7 +26,9 @@ namespace Knockout.AI.States
 
         public override void Enter(AIContext context)
         {
+            #if UNITY_EDITOR
             Debug.Log("[AI] Entering AttackState - Selecting attack");
+            #endif
 
             // Choose attack based on distance
             _chosenAttack = ChooseAttack(context);
@@ -59,7 +61,9 @@ namespace Knockout.AI.States
 
         public override void Exit(AIContext context)
         {
+            #if UNITY_EDITOR
             Debug.Log("[AI] Exiting AttackState - Attack complete");
+            #endif
         }
 
         public override bool CanTransitionTo(AIState newState)

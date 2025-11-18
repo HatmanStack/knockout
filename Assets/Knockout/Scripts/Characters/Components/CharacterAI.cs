@@ -104,7 +104,9 @@ namespace Knockout.Characters.Components
             // Initialize decision timer
             _decisionTimer = 0f;
 
+            #if UNITY_EDITOR
             Debug.Log($"[{gameObject.name}] CharacterAI initialized, targeting {targetPlayer.name}");
+            #endif
         }
 
         private void Update()
@@ -299,7 +301,9 @@ namespace Knockout.Characters.Components
 
                 if (attackExecuted)
                 {
+                    #if UNITY_EDITOR
                     Debug.Log($"[AI] Executed attack type {chosenAttack}");
+                    #endif
                 }
             }
 

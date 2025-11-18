@@ -14,7 +14,9 @@ namespace Knockout.AI.States
 
         public override void Enter(AIContext context)
         {
+            #if UNITY_EDITOR
             Debug.Log("[AI] Entering RetreatState - Backing away");
+            #endif
         }
 
         public override AIState Update(AIContext context)

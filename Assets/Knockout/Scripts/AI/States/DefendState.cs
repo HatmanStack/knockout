@@ -19,7 +19,9 @@ namespace Knockout.AI.States
 
         public override void Enter(AIContext context)
         {
+            #if UNITY_EDITOR
             Debug.Log("[AI] Entering DefendState - Blocking");
+            #endif
 
             // Randomize block duration to be unpredictable
             _blockDuration = Random.Range(MIN_BLOCK_DURATION, MAX_BLOCK_DURATION);
@@ -52,7 +54,9 @@ namespace Knockout.AI.States
 
         public override void Exit(AIContext context)
         {
+            #if UNITY_EDITOR
             Debug.Log("[AI] Exiting DefendState - Lowering guard");
+            #endif
         }
 
         public override bool CanTransitionTo(AIState newState)

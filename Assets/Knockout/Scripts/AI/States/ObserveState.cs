@@ -27,7 +27,9 @@ namespace Knockout.AI.States
         {
             // Initialize observe state with random duration
             _observeDuration = Random.Range(MIN_OBSERVE_DURATION, MAX_OBSERVE_DURATION);
+            #if UNITY_EDITOR
             Debug.Log($"[AI] Entering ObserveState - Watching player for {_observeDuration:F2}s");
+            #endif
         }
 
         public override AIState Update(AIContext context)
@@ -97,13 +99,17 @@ namespace Knockout.AI.States
             if (choice < 0.33f && context.OwnHealthPercentage > 50f)
             {
                 // Attack when should be cautious
+                #if UNITY_EDITOR
                 Debug.Log("[AI] Making mistake: attacking when should be cautious");
+                #endif
                 return new AttackState();
             }
             else if (choice < 0.66f)
             {
                 // Approach when should maintain distance
+                #if UNITY_EDITOR
                 Debug.Log("[AI] Making mistake: approaching unnecessarily");
+                #endif
                 return new ApproachState();
             }
 
