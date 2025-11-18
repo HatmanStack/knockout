@@ -42,5 +42,25 @@ namespace Knockout.Characters.Data
         public float RotationSpeed => rotationSpeed;
         public float DamageMultiplier => damageMultiplier;
         public float DamageTakenMultiplier => damageTakenMultiplier;
+
+        #region Test Helpers
+
+        /// <summary>
+        /// Sets max health (for testing purposes).
+        /// </summary>
+        public void SetMaxHealth(float value)
+        {
+            maxHealth = value;
+        }
+
+        /// <summary>
+        /// Sets damage taken multiplier (for testing purposes).
+        /// </summary>
+        public void SetDamageTakenMultiplier(float value)
+        {
+            damageTakenMultiplier = value;
+        }
+
+        #endregion
     }
 }
