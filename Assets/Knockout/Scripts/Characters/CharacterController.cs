@@ -29,11 +29,13 @@ namespace Knockout.Characters
         // Phase 2 components
         private Knockout.Characters.Components.CharacterAnimator _characterAnimator;
 
-        // TODO: Add component references in future phases
-        // private CharacterInput _characterInput;
-        // private CharacterMovement _characterMovement;
-        // private CharacterCombat _characterCombat;
-        // private CharacterHealth _characterHealth;
+        // Phase 3 components
+        private Knockout.Characters.Components.CharacterInput _characterInput;
+        private Knockout.Characters.Components.CharacterMovement _characterMovement;
+        private Knockout.Characters.Components.CharacterCombat _characterCombat;
+        private Knockout.Characters.Components.CharacterHealth _characterHealth;
+
+        // TODO: Phase 4 component
         // private CharacterAI _characterAI;
 
         #region Public Properties
@@ -58,6 +60,26 @@ namespace Knockout.Characters
         /// </summary>
         public Knockout.Characters.Components.CharacterAnimator CharacterAnimator => _characterAnimator;
 
+        /// <summary>
+        /// Character input component (Phase 3).
+        /// </summary>
+        public Knockout.Characters.Components.CharacterInput CharacterInput => _characterInput;
+
+        /// <summary>
+        /// Character movement component (Phase 3).
+        /// </summary>
+        public Knockout.Characters.Components.CharacterMovement CharacterMovement => _characterMovement;
+
+        /// <summary>
+        /// Character combat component (Phase 3).
+        /// </summary>
+        public Knockout.Characters.Components.CharacterCombat CharacterCombat => _characterCombat;
+
+        /// <summary>
+        /// Character health component (Phase 3).
+        /// </summary>
+        public Knockout.Characters.Components.CharacterHealth CharacterHealth => _characterHealth;
+
         #endregion
 
         #region Unity Lifecycle
@@ -70,11 +92,8 @@ namespace Knockout.Characters
 
         private void Start()
         {
-            // TODO: Initialize subsystems in future phases
-            // Example:
-            // _characterAnimator?.Initialize(this);
-            // _characterInput?.Initialize(this);
-            // _characterMovement?.Initialize(this);
+            // Wire up component event connections
+            WireComponentEvents();
         }
 
         private void OnValidate()
@@ -102,10 +121,14 @@ namespace Knockout.Characters
             // Phase 2 components
             _characterAnimator = GetComponent<Knockout.Characters.Components.CharacterAnimator>();
 
-            // TODO: Cache custom components in future phases
-            // _characterInput = GetComponent<CharacterInput>();
-            // _characterMovement = GetComponent<CharacterMovement>();
-            // etc.
+            // Phase 3 components
+            _characterInput = GetComponent<Knockout.Characters.Components.CharacterInput>();
+            _characterMovement = GetComponent<Knockout.Characters.Components.CharacterMovement>();
+            _characterCombat = GetComponent<Knockout.Characters.Components.CharacterCombat>();
+            _characterHealth = GetComponent<Knockout.Characters.Components.CharacterHealth>();
+
+            // TODO: Phase 4 component
+            // _characterAI = GetComponent<CharacterAI>();
         }
 
         /// <summary>
@@ -155,6 +178,34 @@ namespace Knockout.Characters
             {
                 Debug.LogError($"[{gameObject.name}] CharacterController setup is invalid! " +
                     "Character may not function correctly.", this);
+            }
+        }
+
+        /// <summary>
+        /// Wires up event connections between components.
+        /// </summary>
+        private void WireComponentEvents()
+        {
+            // CharacterInput → CharacterMovement
+            if (_characterInput != null && _characterMovement != null)
+            {
+                _characterInput.OnMoveInput += _characterMovement.SetMovementInput;
+            }
+
+            // CharacterInput → CharacterCombat
+            if (_characterInput != null && _characterCombat != null)
+            {
+                _characterInput.OnJabPressed += _characterCombat.ExecuteJab;
+                _characterInput.OnHookPressed += _characterCombat.ExecuteHook;
+                _characterInput.OnUppercutPressed += _characterCombat.ExecuteUppercut;
+                _characterInput.OnBlockPressed += _characterCombat.StartBlocking;
+                _characterInput.OnBlockReleased += _characterCombat.StopBlocking;
+            }
+
+            // CharacterHealth → CharacterInput (disable input on death)
+            if (_characterHealth != null && _characterInput != null)
+            {
+                _characterHealth.OnDeath += _characterInput.DisableInput;
             }
         }
 
