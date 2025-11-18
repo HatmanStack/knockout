@@ -54,8 +54,9 @@ namespace Knockout.Characters.Components
 
         /// <summary>
         /// Fired when an attack is executed.
+        /// Parameter: attack type (0 = jab, 1 = hook, 2 = uppercut)
         /// </summary>
-        public event Action OnAttackExecuted;
+        public event Action<int> OnAttackExecuted;
 
         /// <summary>
         /// Fired when blocking starts.
@@ -197,8 +198,8 @@ namespace Knockout.Characters.Components
             // Trigger attack animation
             _characterAnimator.TriggerAttack(attackData.AttackTypeIndex);
 
-            // Fire event
-            OnAttackExecuted?.Invoke();
+            // Fire event with attack type
+            OnAttackExecuted?.Invoke(attackData.AttackTypeIndex);
 
             return true;
         }

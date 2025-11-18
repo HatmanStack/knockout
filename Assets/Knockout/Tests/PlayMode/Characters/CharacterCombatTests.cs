@@ -94,7 +94,7 @@ namespace Knockout.Tests.PlayMode.Characters
             yield return null;
 
             bool attacked = false;
-            combat.OnAttackExecuted += () => attacked = true;
+            combat.OnAttackExecuted += (attackType) => attacked = true;
 
             // Act
             combat.ExecuteAttack(jabData);
