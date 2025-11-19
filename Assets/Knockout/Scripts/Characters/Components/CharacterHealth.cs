@@ -21,6 +21,7 @@ namespace Knockout.Characters.Components
         private CharacterAnimator _characterAnimator;
         private CharacterCombat _characterCombat;
         private CombatStateMachine _combatStateMachine;
+        private CharacterParry _characterParry;
 
         // Current health state
         private float _currentHealth;
@@ -48,6 +49,11 @@ namespace Knockout.Characters.Components
         /// Fired when hit is dodged (during i-frames).
         /// </summary>
         public event Action<HitData> OnHitDodged;
+
+        /// <summary>
+        /// Fired when hit is parried (perfect block).
+        /// </summary>
+        public event Action<HitData> OnHitParried;
 
         #endregion
 
@@ -83,6 +89,7 @@ namespace Knockout.Characters.Components
             _characterAnimator = GetComponent<CharacterAnimator>();
             _characterCombat = GetComponent<CharacterCombat>();
             _combatStateMachine = GetComponent<CombatStateMachine>();
+            _characterParry = GetComponent<CharacterParry>();
         }
 
         private void Start()
@@ -125,6 +132,14 @@ namespace Knockout.Characters.Components
             {
                 // Hit dodged - no damage applied
                 OnHitDodged?.Invoke(hitData);
+                return;
+            }
+
+            // Check for parry (takes priority over normal block)
+            if (TryParry(hitData))
+            {
+                // Hit parried - no damage applied
+                OnHitParried?.Invoke(hitData);
                 return;
             }
 
@@ -193,6 +208,30 @@ namespace Knockout.Characters.Components
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Attempts to parry an incoming hit.
+        /// </summary>
+        /// <param name="hitData">Data about the incoming hit</param>
+        /// <returns>True if parry successful, false otherwise</returns>
+        private bool TryParry(HitData hitData)
+        {
+            if (_characterParry == null)
+            {
+                return false;
+            }
+
+            // Get attacker's CharacterCombat from hit data
+            // HitData should contain reference to attacker
+            CharacterCombat attacker = null;
+            if (hitData != null && hitData.Attacker != null)
+            {
+                attacker = hitData.Attacker.GetComponent<CharacterCombat>();
+            }
+
+            // Attempt parry
+            return _characterParry.TryParry(hitData, attacker);
         }
 
         #endregion
