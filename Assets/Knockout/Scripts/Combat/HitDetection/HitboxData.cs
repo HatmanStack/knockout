@@ -234,7 +234,23 @@ namespace Knockout.Combat.HitDetection
             CharacterHealth health = target.GetComponent<CharacterHealth>();
             if (health != null)
             {
+                // Check if target is blocking before hit
+                CharacterCombat targetCombat = target.GetComponent<CharacterCombat>();
+                bool wasBlocking = targetCombat != null && targetCombat.IsBlocking;
+
+                // Apply damage
                 health.TakeDamage(hitData);
+
+                // If hit was blocked, break attacker's combo
+                if (wasBlocking)
+                {
+                    CharacterComboTracker ownerComboTracker = ownerCharacter?.GetComponent<CharacterComboTracker>();
+                    if (ownerComboTracker != null)
+                    {
+                        // Break combo due to block
+                        ownerComboTracker.BreakCombo();
+                    }
+                }
             }
             else
             {

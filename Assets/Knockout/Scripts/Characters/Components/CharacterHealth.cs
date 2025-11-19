@@ -55,6 +55,11 @@ namespace Knockout.Characters.Components
         /// </summary>
         public event Action<HitData> OnHitParried;
 
+        /// <summary>
+        /// Fired when hit is blocked (damage reduced).
+        /// </summary>
+        public event Action<HitData> OnHitBlocked;
+
         #endregion
 
         #region Public Properties
@@ -183,9 +188,17 @@ namespace Knockout.Characters.Components
             }
 
             // Apply blocking reduction (75% damage reduction)
+            bool wasBlocked = false;
             if (_characterCombat != null && _characterCombat.IsBlocking)
             {
                 damage *= 0.25f; // 75% reduction = take 25% damage
+                wasBlocked = true;
+            }
+
+            // Fire blocked event if hit was blocked
+            if (wasBlocked)
+            {
+                OnHitBlocked?.Invoke(hitData);
             }
 
             return damage;

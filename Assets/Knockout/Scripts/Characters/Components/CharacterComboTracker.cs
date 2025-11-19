@@ -308,8 +308,9 @@ namespace Knockout.Characters.Components
 
         /// <summary>
         /// Breaks the current combo (from block or hit).
+        /// Called externally when attacks are blocked.
         /// </summary>
-        private void BreakCombo()
+        public void BreakCombo()
         {
             if (_comboCount > 0)
             {
