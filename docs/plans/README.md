@@ -1,130 +1,191 @@
-# Unity 6.0 Upgrade Implementation Plan
+# Physics-Based AI Opponent Implementation Plan
 
 ## Feature Overview
 
-This plan guides the upgrade of the Knockout fighting game from Unity 2021.3.45f2 LTS to Unity 6.0 with comprehensive modernization. The project is a WebGL-based fighting game featuring a sophisticated combat system with AI opponents, combo mechanics, stamina management, and extensive UI elements.
+This implementation plan details the development of a physics-based AI opponent system for the Knockout fighting game, inspired by the [Facebook Research paper on control strategies for physically simulated characters](https://research.facebook.com/publications/control-strategies-for-physically-simulated-characters-performing-two-player-competitive-sports/). The system uses reinforcement learning (RL) via Unity ML-Agents to train AI opponents that exhibit realistic physics-based movement, attacks, balance recovery, and defensive positioning.
 
-The upgrade involves a direct version jump from Unity 2021.3 to Unity 6.0, which spans approximately 4 major Unity releases. This includes updating the Universal Render Pipeline (URP) from version 12.1.15 to Unity 6's URP, migrating the Input System, updating Cinemachine, and ensuring compatibility with third-party Asset Store packages (AAAnimators Boxing, Asset Unlock - 3D Prototyping, and StarterAssets).
+Unlike the current behavioral state machine AI, this physics-based approach creates emergent, adaptive behavior through self-play training. The implementation follows a hybrid architecture where the existing behavioral AI provides high-level strategic decisions while the RL agent controls low-level physics execution, with an arbiter system blending the two approaches. This creates AI opponents that move naturally, transfer weight realistically during attacks, recover from hits with physical authenticity, and maintain proper fighting stances.
 
-Beyond compatibility, this plan incorporates Unity 6 modernization features including rendering improvements, performance optimizations, and WebGL-specific enhancements. The project has comprehensive test coverage (52+ test files covering EditMode, PlayMode, integration, and performance testing) which will serve as a safety net throughout the upgrade process.
-
-## CRITICAL: Unity Editor Access Constraint
-
-**WARNING: This plan is designed for execution WITHOUT Unity Editor access initially.**
-
-Most migration tasks normally require Unity Editor, but code changes will be prepared using IDE/text editor only. This means:
-
-- **No compilation verification** - changes are untested
-- **No test execution** - test suite cannot run
-- **No build validation** - cannot create builds
-- **High iteration expected** - significant rework expected when Unity Editor opens
-
-**Phases 2-7 tasks will be completed "to best ability" without Unity Editor verification.**
-
-### Unity Editor Task Management
-
-**IMPORTANT:** When implementing phases, ALL tasks that require Unity Editor access must be:
-
-1. **Documented in `MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`** with detailed step-by-step instructions
-2. **Marked as incomplete** in the phase completion summary
-3. **Added to the appropriate phase section** in MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md
-
-**DO NOT** attempt Unity Editor tasks without Editor access. Instead:
-- Document what needs to be done
-- Append detailed instructions to MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md
-- Mark the task as "deferred - requires Unity Editor"
-- Continue with tasks that can be completed
-
-See `MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` for the complete list of all tasks requiring Unity Editor across all phases.
+The system is designed for incremental rollout across six phases, allowing validation at each stage before adding complexity. Training occurs locally using Unity ML-Agents with parallel environments for efficiency. The RL agent uses a continuous action space (target poses + parameters) and comprehensive observations (physics state, opponent state, spatial relationships, game context) to learn through self-play with multi-objective rewards balancing combat effectiveness, physical realism, strategic depth, and player entertainment.
 
 ## Prerequisites
 
-**Required Software:**
-- Git (for version control and branching)
-- Text editor/IDE with C# support (VS Code, Rider, Visual Studio)
-- **Unity Editor NOT required initially** (will need later for validation)
-- Web browser for research
+### CRITICAL: Unity 6.0 Upgrade Dependency
 
-**Required Knowledge:**
-- C# programming
-- Git workflow (branching, commits, merges)
-- Unity API familiarity (to recognize API changes)
-- Text-based code editing
+**⚠️ IMPORTANT**: This implementation plan requires the completion of the Unity 6.0 upgrade. DO NOT begin implementation until:
+- Unity 6.0 upgrade is complete (see `upgrade-unity-6` branch, all phases 0-7)
+- All character system tests are passing
+- WebGL builds are validated
+- Performance baselines are established
 
-**System Requirements:**
-- Sufficient disk space for code changes (~1-2GB)
+See `UNITY_6_UPGRADE_IMPACT.md` for detailed impact analysis.
 
-**Environment Setup:**
-- All pending changes committed or stashed
-- IDE/text editor configured for C# editing
-- Access to Unity documentation for API reference
+### Dependencies
+
+- **Unity 6.0 (6000.0.x)** (upgraded from 2021.3)
+- **Unity ML-Agents 2.0.x** (Unity 6 default version)
+  - Install: `pip install mlagents` (from PyPI, Release 21)
+  - Unity Package: `com.unity.ml-agents` version 2.0.1 or 2.0.2
+  - **Note**: ML-Agents 3.0/4.0 exist but have Unity 6 compatibility issues
+- **Unity Sentis 2.1** (**NEW** - replaces Barracuda)
+  - Unity Package: `com.unity.sentis` version 2.1.1+
+  - Required for ML model inference (Barracuda is deprecated)
+  - Uses compute shaders for neural network execution
+- **Python 3.10.12** (REQUIRED - locked version)
+  - ML-Agents requires Python >=3.10.1, <=3.10.12
+  - **Python 3.11/3.12 NOT supported** (PyTorch dependency constraints)
+  - Use conda: `conda create -n mlagents python=3.10.12`
+- **PyTorch 2.1.1/2.2.1** (ML-Agents training backend)
+  - Auto-installed with mlagents package
+  - CPU version sufficient for local training
+  - GPU version optional: `pip install torch~=2.2.1 --index-url https://download.pytorch.org/whl/cu121`
+
+### Environment Setup
+
+1. **Verify Unity 6.0 Upgrade Complete**:
+   - Confirm Unity 6.0 is installed and project opens without errors
+   - Verify all 52+ tests are passing
+   - Check that character systems work correctly
+
+2. **Python Environment**: Use conda/mamba (recommended) or `uv`
+   ```bash
+   # Recommended: Use conda for Python 3.10.12
+   conda create -n mlagents python=3.10.12
+   conda activate mlagents
+   pip install mlagents
+
+   # Alternative: Use uv
+   uv venv ml-agents-env --python 3.10.12
+   source ml-agents-env/bin/activate  # Linux/Mac
+   uv pip install mlagents
+   ```
+
+3. **Unity Package Manager**: Add ML-Agents 2.0.x and Sentis packages
+   - Window > Package Manager
+   - Add `com.unity.ml-agents` (version 2.0.1/2.0.2 will show)
+   - Add `com.unity.sentis` (version 2.1.1+)
+   - **Important**: Sentis is required for ML-Agents to work
+
+4. **Verify Installation**:
+   ```bash
+   mlagents-learn --help
+   python --version  # MUST show 3.10.x
+   python -c "import torch; print(torch.__version__)"  # Check PyTorch
+   ```
+
+### Knowledge Requirements
+
+- Basic familiarity with Unity ML-Agents (have completed examples)
+- Understanding of Unity physics system (Rigidbody, forces, joints)
+- C# proficiency with Unity component patterns
+- Basic RL concepts (observations, actions, rewards, training)
 
 ## Phase Summary
 
-| Phase | Goal | Estimated Tokens | File |
-|-------|------|------------------|------|
-| **Phase 0** | Foundation - Architecture decisions, strategy, and planning | N/A | [Phase-0.md](Phase-0.md) |
-| **Phase 1** | Pre-Upgrade Preparation - Backup, audit, documentation | ~18,000 | [Phase-1.md](Phase-1.md) |
-| **Phase 2** | Unity 6 Upgrade Execution - Install Unity 6, upgrade project | ~24,000 | [Phase-2.md](Phase-2.md) |
-| **Phase 3** | Package Updates & Compatibility - Update all Unity packages | ~28,000 | [Phase-3.md](Phase-3.md) |
-| **Phase 4** | Test Suite Migration & Fixes - Update and fix all tests | ~32,000 | [Phase-4.md](Phase-4.md) |
-| **Phase 5** | Asset Store Package Updates - Verify and update third-party assets | ~16,000 | [Phase-5.md](Phase-5.md) |
-| **Phase 6** | Modernization & Unity 6 Features - Adopt new Unity 6 capabilities | ~28,000 | [Phase-6.md](Phase-6.md) |
-| **Phase 7** | WebGL Optimization & Final Validation - Platform-specific improvements | ~24,000 | [Phase-7.md](Phase-7.md) |
-| **Total** | **Complete Unity 6.0 upgrade with modernization** | **~170,000** | |
+| Phase | Goal | Estimated Tokens | Status |
+|-------|------|-----------------|--------|
+| [Phase 0](Phase-0.md) | Architecture & Foundation - Design decisions, ML-Agents setup, shared patterns | ~15,000 | Not Started |
+| [Phase 1](Phase-1.md) | Training Infrastructure & Basic Movement - ML-Agents integration, training pipeline, physics-enhanced footwork | ~95,000 | Not Started |
+| [Phase 2](Phase-2.md) | Attack Execution - Physics-based punching with weight transfer and force application | ~85,000 | Not Started |
+| [Phase 3](Phase-3.md) | Hit Reactions & Balance - Stumbling, recovery, knockdowns driven by physics | ~90,000 | Not Started |
+| [Phase 4](Phase-4.md) | Defensive Positioning - Blocking stance, dodging, center of mass control | ~85,000 | Not Started |
+| [Phase 5](Phase-5.md) | Arbiter Integration & Polish - Blend behavioral AI with RL, full system integration, optimization | ~95,000 | Not Started |
+
+**Total Estimated Tokens**: ~465,000 across all phases
 
 ## Navigation
 
-- [Phase 0 - Foundation](Phase-0.md) - Start here for architecture decisions
-- [Phase 1 - Pre-Upgrade Preparation](Phase-1.md)
-- [Phase 2 - Unity 6 Upgrade Execution](Phase-2.md)
-- [Phase 3 - Package Updates & Compatibility](Phase-3.md)
-- [Phase 4 - Test Suite Migration & Fixes](Phase-4.md)
-- [Phase 5 - Asset Store Package Updates](Phase-5.md)
-- [Phase 6 - Modernization & Unity 6 Features](Phase-6.md)
-- [Phase 7 - WebGL Optimization & Final Validation](Phase-7.md)
+### Foundation
+- [Phase 0: Architecture & Design Decisions](Phase-0.md)
 
-## Quick Start
+### Implementation Phases
+- [Phase 1: Training Infrastructure & Movement](Phase-1.md)
+- [Phase 2: Attack Execution](Phase-2.md)
+- [Phase 3: Hit Reactions & Balance](Phase-3.md)
+- [Phase 4: Defensive Positioning](Phase-4.md)
+- [Phase 5: Arbiter Integration & Polish](Phase-5.md)
 
-1. Read [Phase-0.md](Phase-0.md) thoroughly to understand architectural decisions
-2. Ensure all prerequisites are met (Unity 6.0 installed, backups created)
-3. Begin with Phase 1 and proceed sequentially
-4. Do not skip phases - each builds on the previous
-5. Commit frequently using conventional commits format
-6. Run tests after each major change
+## Development Workflow
 
-## Important Notes
+### Before Starting Each Phase
 
-- **Unity Editor constraint** - Most tasks cannot be fully validated without Unity Editor
-- **Document Unity Editor tasks** - ALL Unity Editor tasks MUST be appended to `UNITY_EDITOR_INSTRUCTIONS.md` with detailed instructions
-- **Code changes are tentative** - Expect iteration when Unity Editor becomes available
-- **Documentation focus** - Phase 1 documentation can be completed fully
-- **Code changes are best-effort** - Based on API documentation and code analysis
-- **Commit atomically** - Small commits make Unity Editor validation easier
-- **Mark tasks as "deferred - requires Unity Editor"** - Be honest about what cannot be completed
-- **Reference UNITY_EDITOR_INSTRUCTIONS.md** - Full list of tasks requiring Unity Editor (must be kept up-to-date)
+1. Read Phase 0 (Architecture & Foundation) completely
+2. Review prerequisites for the specific phase
+3. Ensure previous phases are complete and verified
+4. Check that all dependencies are installed
+5. Create a feature branch for the phase
 
-### What CAN Be Done Without Unity Editor:
+### During Phase Implementation
 
-- Phase 0: Complete (read-only architecture decisions)
-- Phase 1: Partial (Tasks 2, 3, 4, 6, 7 - documentation and research)
-  - Tasks 1, 5, 8 require Unity Editor and are documented in UNITY_EDITOR_INSTRUCTIONS.md
-- Phases 2-7: Code changes can be prepared but NOT verified
-  - All Unity Editor tasks must be documented in UNITY_EDITOR_INSTRUCTIONS.md
+1. Follow tasks sequentially unless otherwise specified
+2. Write tests BEFORE implementation (TDD)
+3. Commit after each task completion (atomic commits)
+4. Use conventional commit format (see Phase 0)
+5. Verify task completion checklist before moving on
 
-### What CANNOT Be Done Without Unity Editor:
+### After Each Phase
 
-- Compile code to verify syntax
-- Run any tests
-- Verify API changes work correctly
-- Update packages via Package Manager
-- Build for WebGL
-- Test gameplay
-- Verify asset compatibility
+1. Complete phase verification checklist
+2. Run full test suite
+3. Commit any remaining changes
+4. Optionally create a pull request for review
+5. Merge to main branch before starting next phase
+
+## Training Workflow
+
+Each phase involving RL training follows this pattern:
+
+1. **Design** observation/action space for the behavior
+2. **Implement** Agent component with observations/actions
+3. **Configure** training hyperparameters in YAML
+4. **Create** parallel training environment
+5. **Train** agent locally with self-play
+6. **Evaluate** performance and adjust rewards
+7. **Iterate** until behavior meets success criteria
+8. **Export** trained model (.onnx file)
+9. **Integrate** into gameplay
+
+## Common Pitfalls
+
+- **Training too long initially**: Start with short training runs (5-10 minutes) to verify setup
+- **Observation space too large**: Keep observations minimal and normalized
+- **Reward function conflicts**: Balance competing objectives carefully
+- **Forgetting to normalize**: Always normalize observations to [-1, 1] or [0, 1]
+- **Not using parallel environments**: Use at least 4-8 parallel envs for local training
+- **Skipping curriculum**: Complex behaviors may need staged training
 
 ## Support Resources
 
-- Unity 6.0 Upgrade Guide: https://docs.unity3d.com/Manual/UpgradeGuides.html
-- URP Upgrade Guide: https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@latest
-- Unity 6.0 Release Notes: Check Unity Hub for detailed release notes
-- Input System Migration: https://docs.unity3d.com/Packages/com.unity.inputsystem@latest
+- [Unity ML-Agents Documentation](https://unity-technologies.github.io/ml-agents/)
+- [Facebook Research Paper](https://research.facebook.com/publications/control-strategies-for-physically-simulated-characters-performing-two-player-competitive-sports/)
+- [Unity Physics Documentation](https://docs.unity3d.com/Manual/PhysicsSection.html)
+- Project-specific: `docs/PERFORMANCE_OPTIMIZATION.md`, `docs/EXTENSION_GUIDE.md`
+
+## Current Project State
+
+### Unity 6.0 Upgraded Systems
+
+The project has been upgraded to Unity 6.0 with the following modernized packages:
+- **URP**: 17.x/18.x (upgraded from 12.1.15)
+- **Input System**: 1.8.x+ (upgraded from 1.7.0)
+- **Cinemachine**: 3.x (upgraded from 2.10.1)
+- **Test Framework**: Latest (upgraded from 1.1.33)
+
+### Existing Systems to Leverage
+
+- **Character Components**: CharacterController, CharacterCombat, CharacterMovement, CharacterHealth (Unity 6 compatible)
+- **Behavioral AI**: State machine with Observe/Approach/Attack/Defend/Retreat states
+- **Combat System**: Attack data, hit detection, blocking mechanics
+- **Round System**: RoundManager for game flow
+- **Test Infrastructure**: 52+ test files with Unity Test Framework (Unity 6 validated)
+
+### Integration Points
+
+The physics-based AI will integrate with Unity 6-upgraded systems:
+- `CharacterAI.cs` - Main AI coordinator (will work alongside new physics agent)
+- `CharacterCombat.cs` - Attack execution system (uses Unity 6 APIs)
+- `CharacterMovement.cs` - Movement system (Input System 1.8.x)
+- `CharacterHealth.cs` - Damage and health tracking
+- `AIStateMachine.cs` - Behavioral decision-making
+
+See Phase 0 for detailed architecture decisions on integration strategy.

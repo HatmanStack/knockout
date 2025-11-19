@@ -1,700 +1,682 @@
-# Phase 3: Package Updates & Compatibility
+# Phase 3: Hit Reactions & Balance Recovery
+
+## Unity 6.0 Compatibility Note
+
+**This phase assumes Unity 6.0 upgrade is complete.** Physics-based hit reactions and balance recovery use Unity 6 physics engine. Force calculations and Rigidbody behavior are tuned for Unity 6. See `UNITY_6_UPGRADE_IMPACT.md` for details.
 
 ## Phase Goal
 
-Update all Unity packages to their Unity 6-compatible versions, starting with URP (Universal Render Pipeline), then Input System, Cinemachine, and other packages. This phase resolves rendering, input, and package-related runtime issues introduced during the Unity 6 upgrade.
+Implement physics-based hit reactions, balance control, and recovery systems. The agent will learn to respond realistically to incoming hits, stumble authentically based on force and location, maintain balance through center-of-mass control, and recover gracefully to continue fighting. This creates dramatic, physically believable combat exchanges.
 
 **Success Criteria:**
-- All Unity packages updated to Unity 6-compatible versions
-- URP rendering works correctly (scenes render properly)
-- Input System functional (character input responds)
-- Cinemachine cameras working
-- Package-related compilation errors resolved
-- Project still compiles with zero errors
+- Hit reaction observations track balance state and impact forces
+- Balance recovery actions allow agent to regain stability
+- Physics controllers simulate stumbling, reeling, and knockdowns
+- Reward function encourages maintaining balance and quick recovery
+- Agent trains to recover from hits and continue fighting
+- Trained agent exhibits realistic hit reactions and balance behavior
 
-**Estimated tokens:** ~28,000
-
----
+**Estimated tokens:** ~90,000
 
 ## Prerequisites
 
-- Phase 2 complete (project compiles in Unity 6)
-- Unity 6 project opens successfully
-- Git tag "post-unity6-upgrade" exists
-- No compilation errors
+- Phase 0 completed (architecture foundation)
+- Phase 1 completed (movement trained)
+- Phase 2 completed (attack execution trained)
+- `attack_phase2.onnx` model available
+- Understanding of character balance and physics
 
 ---
 
-## Tasks
+## Task 1: Add Balance and Hit Reaction Observations
 
-### Task 1: Update Universal Render Pipeline (URP)
-
-**Goal:** Update URP from 12.1.15 to Unity 6-compatible version
+**Goal:** Provide agent with information about balance state, incoming forces, and recovery status.
 
 **Files to Modify/Create:**
-- `Packages/manifest.json` (Package Manager will modify)
-- Various shader and material files (may be automatically upgraded)
-- URP asset settings
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (modify)
 
 **Prerequisites:**
-- Phase 2 complete
+- Phase 2 observations working (69 dimensions currently)
 
 **Implementation Steps:**
 
-1. Open Package Manager (Window > Package Manager)
-2. Switch filter to "Unity Registry" (top-left dropdown)
-3. Find "Universal RP" in the package list
-4. Check current version (should be 12.1.15 from Unity 2021.3)
-5. Click "Update to [version]" button (Unity 6 should show 17.x or 18.x)
-6. Wait for package download and installation (may take several minutes)
-7. Unity will prompt about shader upgrades:
-   - Review the shader upgrade dialog
-   - Accept shader upgrades (Unity will automatically update shaders)
-8. Wait for asset reimport to complete
-9. Check Console for errors (some expected - will fix next)
-10. Open MainScene and check rendering:
-    - Scene view should render properly
-    - Game view should render when entering Play mode
-11. Review URP asset settings (Settings/ folder):
-    - Check Universal Render Pipeline Asset
-    - Verify Renderer settings are intact
-    - Update any deprecated settings Unity flags
+1. **Add balance state observations** (~8 observations):
+   - Center of mass offset from support base (2D x,z normalized)
+   - Balance stability metric (0-1, how close to tipping)
+   - Current tilt angle from vertical (normalized)
+   - Angular velocity around balance point (normalized)
+   - Ground contact status per foot (2 booleans)
+   - Is currently stumbling/staggering (boolean)
+   - Time since last hit received (normalized, capped at 5 seconds)
+
+2. **Add hit impact observations** (~6 observations):
+   - Last hit impact force magnitude (normalized)
+   - Last hit direction (2D vector x,z)
+   - Last hit height (normalized: body/head)
+   - Is currently in hit-stun state (boolean)
+   - Hit-stun time remaining (normalized)
+
+3. **Add recovery status observations** (~4 observations):
+   - Recovery progress (0-1, from hit-stun to normal)
+   - Current animation state (one-hot: normal/hit-stunned/stumbling/knocked-down)
+   - Distance fallen from impact (normalized, if stumbling back)
+   - Can perform recovery action (boolean)
+
+4. **Update total observation count**:
+   - Previous: ~69
+   - New balance observations: ~18
+   - New total: ~87 observations
+   - Update BehaviorParameters Vector Observation Space Size to 87
+
+5. **Implement observation collection**:
+   - Calculate center of mass projection onto ground plane
+   - Determine support polygon from foot positions (use Physics.Raycast)
+   - Calculate stability metric (distance from CoM to polygon edge)
+   - Get last hit data from CharacterHealth or CharacterCombat component
+   - Track hit-stun duration and recovery progress
+
+6. **Handle knockdown observations**:
+   - If character knocked down, add specific observations:
+     - Ground contact (full body boolean)
+     - Orientation (angle from upright)
+     - Time knocked down (normalized)
 
 **Verification Checklist:**
-- [ ] URP package updated to Unity 6 version (17.x or 18.x)
-- [ ] Shader upgrades accepted and completed
-- [ ] Assets reimported successfully
-- [ ] Scenes render in Scene view
-- [ ] Game renders in Play mode (may have visual issues - acceptable)
-- [ ] URP asset settings visible and intact
+- [ ] Observation space updated to ~87 dimensions
+- [ ] Balance stability calculates correctly
+- [ ] Hit impact data captured accurately
+- [ ] Recovery progress tracks over time
+- [ ] No NaN values in new observations
 
 **Testing Instructions:**
-- Load MainScene and check if scene renders
-- Enter Play mode and verify rendering works
-- Check Console for critical rendering errors
-- Inspect Game view for major visual issues (minor issues acceptable)
+- Unit tests for CoM and support polygon calculations
+- Manual testing: get hit and verify hit impact observations update
+- Check balance stability metric as character leans
 
 **Commit Message Template:**
 ```
-feat(urp): update Universal Render Pipeline to Unity 6
+feat(observations): add balance and hit reaction observations
 
-Updated URP from 12.1.15 to [new version]
-Accepted automatic shader upgrades
+- Added balance state observations (CoM, stability, tilt, contact)
+- Added hit impact observations (force, direction, height, stun)
+- Added recovery status observations (progress, state, actions)
+- Implemented center of mass and support polygon calculations
+- Updated observation space to 87 dimensions
+- Added unit tests for balance calculations
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~5,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 2: Fix URP-Related Compilation Errors
+## Task 2: Add Balance Recovery Actions
 
-**Goal:** Resolve any compilation errors introduced by URP package update
+**Goal:** Expand action space to allow agent to control balance recovery movements.
 
 **Files to Modify/Create:**
-- Scripts that reference URP APIs
-- Custom shaders (if any)
-- Renderer features (if any)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (modify)
 
 **Prerequisites:**
-- Task 1 complete (URP updated)
+- Task 1 completed (balance observations added)
+- Phase 2 actions working (15 dimensions)
 
 **Implementation Steps:**
 
-1. Check Console for compilation errors related to URP
-2. Common URP API changes to look for:
-   - `RenderPipelineManager` API changes
-   - `ScriptableRenderPass` changes
-   - Renderer Feature API updates
-   - Volume system changes
-3. For each URP-related error:
-   - Identify the obsolete or changed API
-   - Check Unity 6 URP documentation for replacement
-   - Update the code with new API
-   - Save and verify compilation
-4. If custom shaders exist:
-   - Check for shader compilation errors
-   - Update shader code to Unity 6 URP shader API
-   - Test shaders in Scene view
-5. If using custom Renderer Features:
-   - Update to new Renderer Feature API
-   - Test features in rendering pipeline
-6. Fix namespace changes related to URP:
-   - `UnityEngine.Rendering.Universal` may have changes
-   - Update using statements
-7. Once all URP errors fixed, recompile project
+1. **Expand action space** from 15 to 20 continuous actions:
+   - Movement actions (0-7): Unchanged
+   - Attack actions (8-12): Unchanged
+   - **Recovery step direction** (index 13): Continuous [-1, 1] for lateral step to regain balance
+   - **Recovery step distance** (index 14): Continuous [0, 1] for step magnitude
+   - **Brace action** (index 15): Continuous [0, 1] threshold for bracing against impact
+   - **Counter-rotation** (index 16): Continuous [-1, 1] for torso twist to counter spin
+   - **Crouch for stability** (index 17): Continuous [0, 1] for lowering CoM
+   - **Unused** (indices 18-19): Reserved for Phase 4 (defense)
+
+2. **Update BehaviorParameters**: Set Vector Action Space Size to 20
+
+3. **Interpret recovery actions in OnActionReceived**:
+   - Extract recovery actions (indices 13-17)
+   - Store in fields for FixedUpdate execution
+   - Clamp values to valid ranges
+
+4. **Implement recovery action execution logic**:
+   - **Recovery step**: If unstable, take quick step in specified direction
+     - Apply lateral force to Rigidbody
+     - Animate foot placement (IK or animation trigger)
+   - **Brace action**: Stiffen joints/increase drag when hit imminent
+     - Increase Rigidbody drag temporarily
+     - Widen stance for stability
+   - **Counter-rotation**: Apply torque opposite to spin from hit
+     - Counteract angular velocity from impact
+   - **Crouch**: Lower center of mass for stability
+     - Reduce CoM height (already implemented in Phase 1, reuse)
+
+5. **Enable recovery actions only in appropriate states**:
+   - Recovery actions only execute when character in hit-stun or stumbling
+   - Disable during normal combat (use movement/attack instead)
+   - Check combat state before executing
+
+6. **Update Heuristic for testing**:
+   - Map keys to recovery actions:
+     - Arrow keys: Recovery step direction
+     - Space: Brace
+     - Ctrl: Crouch for stability
+   - Allows manual testing of recovery system
 
 **Verification Checklist:**
-- [ ] Zero compilation errors related to URP
-- [ ] URP API calls use Unity 6-compatible APIs
-- [ ] Custom shaders compile (if any exist)
-- [ ] Renderer features work (if any exist)
-- [ ] Scenes render correctly
+- [ ] Action space updated to 20 dimensions
+- [ ] Recovery actions interpreted correctly
+- [ ] Recovery step applies lateral force
+- [ ] Brace increases stability when hit
+- [ ] Counter-rotation reduces spin
+- [ ] Actions only execute in appropriate states
+- [ ] Heuristic control works for recovery testing
 
 **Testing Instructions:**
-- Verify Console shows zero errors
-- Load and render all main scenes
-- Check that rendering looks reasonable
-- Enter Play mode and verify rendering works
+- Manual testing in Heuristic mode:
+  - Get hit and use recovery keys
+  - Verify recovery step prevents falling
+  - Test brace reduces knockback
+  - Test counter-rotation stops spinning
+- Verify recovery actions don't interfere with normal combat
 
 **Commit Message Template:**
 ```
-fix(urp): resolve URP API compatibility issues
+feat(actions): add balance recovery actions
 
-Updated URP API calls to Unity 6 equivalents
-Fixed rendering-related compilation errors
+- Expanded action space from 15 to 20 continuous actions
+- Added recovery step direction and distance actions
+- Added brace action for impact absorption
+- Added counter-rotation action for spin recovery
+- Added crouch action for stability
+- Implemented recovery action execution in FixedUpdate
+- Enabled recovery actions only during hit-stun/stumbling
+- Updated Heuristic with recovery key mappings
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~4,500
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 3: Update Input System Package
+## Task 3: Implement Balance Physics Controllers
 
-**Goal:** Update Input System from 1.7.0 to Unity 6-compatible version
+**Goal:** Create physics systems for realistic stumbling, balance recovery, and knockdown mechanics.
 
 **Files to Modify/Create:**
-- `Packages/manifest.json` (Package Manager will modify)
-- Input Action assets (may need regeneration)
-- Scripts using Input System
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/BalanceController.cs` (new)
+- `Assets/Knockout/Scripts/Combat/HitReactionSystem.cs` (new or modify existing)
 
 **Prerequisites:**
-- Tasks 1-2 complete (URP updated and working)
+- Task 2 completed (recovery actions added)
+- Understanding of balance physics and PD controllers
 
 **Implementation Steps:**
 
-1. Open Package Manager (Window > Package Manager)
-2. Find "Input System" in Unity Registry
-3. Check current version (should be 1.7.0)
-4. Update to latest Unity 6-compatible version (likely 1.8.x or higher)
-5. Wait for package update and reimport
-6. Check for Input System migration dialogs:
-   - Unity may prompt about input action asset upgrades
-   - Accept automatic upgrades if prompted
-7. Verify Input Actions assets:
-   - Open Input Actions window (Window > Analysis > Input Debugger)
-   - Check that input actions are still defined
-8. Regenerate Input Action C# classes if needed:
-   - Select Input Actions asset in Project
-   - Check "Generate C# Class" is enabled
-   - Click "Apply" to regenerate
-9. Check Console for Input System errors
-10. Test input functionality in Play mode (character should respond to input)
+1. **Create BalanceController class**:
+   - Serialized parameters:
+     - Balance threshold (how far CoM can be from support before unstable)
+     - Recovery force magnitude
+     - Stumble duration curve
+     - Knockdown force threshold
+     - Brace effectiveness multiplier
+
+2. **Implement balance monitoring**:
+   - Method: `CheckBalanceStability()` â†’ BalanceState enum
+   - Calculate center of mass projection onto ground
+   - Determine support polygon from foot contacts
+   - Return state: Balanced, Unstable, Stumbling, FallingDown
+   - Use Physics.Raycast to detect foot ground contact
+
+3. **Implement hit reaction force application**:
+   - Method: `ApplyHitReactionForce(Vector3 hitForce, Vector3 hitPoint, bool bracing)`
+   - When hit received (listen to CharacterHealth.OnDamageReceived event):
+     - Apply force to Rigidbody at hit location
+     - If bracing: reduce force magnitude by brace effectiveness
+     - Calculate resulting CoM offset from impact
+     - Determine if knockdown threshold exceeded
+     - Trigger stumble or knockdown state
+
+4. **Implement stumbling mechanics**:
+   - Method: `SimulateStumble(Vector3 impactDirection, float magnitude)`
+   - Apply backwards momentum in hit direction
+   - Reduce movement control (multiply movement input by 0.3)
+   - Gradually restore balance using PD controller
+   - Play stumble animation (backward step, catch balance)
+   - Duration based on hit force and agent's recovery actions
+
+5. **Implement balance recovery PD controller**:
+   - Method: `ApplyBalanceRecoveryForce(Vector3 targetCoM, float recoveryIntensity)`
+   - Calculate error: current CoM vs target (center of support polygon)
+   - Calculate derivative: CoM velocity
+   - Apply corrective force: `F = Kp * error + Kd * derivative`
+   - Tune gains: Kp=200, Kd=20 (adjust experimentally)
+   - Agent's recovery actions modify target CoM
+
+6. **Implement recovery step execution**:
+   - Method: `ExecuteRecoveryStep(Vector2 stepDirection, float stepDistance)`
+   - Apply impulse force in step direction
+   - Expand support polygon by moving foot
+   - Use IK to place foot at target position
+   - Immediately stabilize after step completes
+
+7. **Implement brace mechanics**:
+   - Method: `ApplyBraceEffect(float intensity)`
+   - Increase Rigidbody drag temporarily (simulate tensing muscles)
+   - Widen stance slightly (more stable base)
+   - Reduce hit force impact by brace effectiveness (e.g., 50% reduction at full brace)
+
+8. **Implement counter-rotation**:
+   - Method: `ApplyCounterRotation(float intensity)`
+   - Measure current angular velocity
+   - Apply torque in opposite direction scaled by intensity
+   - Helps recover from spinning hits (hooks)
+
+9. **Implement knockdown physics**:
+   - Method: `TriggerKnockdown(Vector3 force)`
+   - If hit force exceeds threshold and balance critical:
+     - Disable balance controller temporarily
+     - Let physics simulate fall (ragdoll-lite)
+     - Play knockdown animation
+     - After delay, allow recovery attempt
+   - Recovery: gradually restore kinematic control, stand up
+
+10. **Integrate with PhysicsAgent**:
+    - In FixedUpdate:
+      - Run CheckBalanceStability()
+      - If unstable/stumbling, apply balance recovery forces
+      - Execute recovery actions from agent (step, brace, counter-rotate)
+    - Listen to damage events and apply hit reaction forces
+
+11. **Tune parameters**:
+    - Balance threshold: CoM must be within 0.8x support polygon radius
+    - Stumble duration: 0.5-2.0 seconds based on hit force
+    - Knockdown threshold: 1500N impact force
+    - Recovery force: 800-1200N
+    - Brace reduction: 0.4-0.6 (40-60% damage reduction)
 
 **Verification Checklist:**
-- [ ] Input System updated to Unity 6 version
-- [ ] Input Action assets intact and functional
-- [ ] C# classes regenerated (if applicable)
-- [ ] No Input System compilation errors
-- [ ] Character input responsive in Play mode
+- [ ] BalanceController compiles without errors
+- [ ] Balance stability monitoring works
+- [ ] Hit reactions apply forces realistically
+- [ ] Stumbling occurs when hit hard
+- [ ] Balance recovery brings character back to stable
+- [ ] Recovery step prevents falls
+- [ ] Brace reduces knockback when hit
+- [ ] Counter-rotation stops spinning
+- [ ] Knockdowns occur at appropriate force levels
+- [ ] Physics feels natural and responsive
 
 **Testing Instructions:**
-- Enter Play mode
-- Test character movement (WASD or configured keys)
-- Test attack inputs
-- Test dodge/block inputs
-- Verify all input responses work
-- Check Console for input-related errors
+- Manual testing with Heuristic control:
+  - Get hit and observe stumble behavior
+  - Use recovery actions to regain balance
+  - Test brace before getting hit (should reduce stumble)
+  - Get hit by strong attack and verify knockdown
+  - Test recovery from knockdown
+- Verify balance controller doesn't interfere with normal movement
 
 **Commit Message Template:**
 ```
-feat(input): update Input System to Unity 6
+feat(physics-controllers): implement balance and hit reaction physics
 
-Updated Input System from 1.7.0 to [new version]
-Regenerated Input Action classes
+- Created BalanceController for physics-based balance management
+- Implemented balance stability monitoring with CoM calculations
+- Applied hit reaction forces based on impact location and force
+- Simulated realistic stumbling with backward momentum
+- Implemented PD controller for balance recovery
+- Added recovery step execution with IK foot placement
+- Implemented brace mechanics to reduce hit impact
+- Added counter-rotation to recover from spinning hits
+- Implemented knockdown physics for high-force impacts
+- Tuned balance parameters for realistic behavior
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~4,500
+**Estimated tokens:** ~12,000
 
 ---
 
-### Task 4: Fix Input System API Changes
+## Task 4: Implement Balance and Recovery Reward Function
 
-**Goal:** Resolve Input System API changes in character controller and input scripts
+**Goal:** Design rewards that encourage maintaining balance, recovering quickly from hits, and continuing to fight.
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs`
-- Any scripts referencing Input System APIs
-- Input Action callback implementations
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (modify)
 
 **Prerequisites:**
-- Task 3 complete (Input System updated)
+- Task 3 completed (balance physics working)
 
 **Implementation Steps:**
 
-1. Check Console for Input System-related errors
-2. Common Input System changes to address:
-   - Input Action callback signature changes
-   - PlayerInput component API changes
-   - Input value reading API changes
-   - Device API changes (less relevant for WebGL)
-3. Update CharacterInput.cs and related input scripts:
-   - Check callback method signatures (OnMove, OnAttack, etc.)
-   - Update to match new Input System API
-   - Verify input reading methods (ReadValue, triggered, etc.)
-   - Update input context handling
-4. Test input bindings:
-   - Verify keyboard input works
-   - Check that input actions fire correctly
-   - Ensure input values are read correctly
-5. Fix any input-related state machine issues:
-   - Combat state machine may depend on input
-   - Verify input flows to combat/movement systems
-6. Commit changes once input works in Play mode
+1. **Add balance maintenance rewards**:
+   - **Balance Stability Reward** (+0.05 per frame):
+     - Reward for maintaining CoM within support polygon
+     - Higher reward for more stable balance (closer to center)
+     - Encourages proactive balance control
+   - **Avoid Stumble Reward** (+0.5 per hit absorbed without stumbling):
+     - Reward for taking hit but staying upright via bracing
+     - Encourages defensive balance techniques
+   - **Grounding Reward** (+0.02 per frame):
+     - Reward for both feet on ground
+     - Already in Phase 1, but now more critical during hit recovery
+
+2. **Add recovery performance rewards**:
+   - **Quick Recovery Reward** (+2.0 inversely proportional to recovery time):
+     - Reward for recovering balance quickly after hit
+     - Faster recovery = higher reward
+     - Formula: `2.0 * (1.0 - time_to_recover / max_recovery_time)`
+   - **Recovery Action Effectiveness** (+0.3 per successful recovery step):
+     - Reward if recovery step prevented fall
+     - Measure stability before and after step
+   - **Resilience Reward** (+1.0 for continuing to fight after hit):
+     - Reward for attacking or moving purposefully within 2 seconds of being hit
+     - Encourages "shaking off" hits and re-engaging
+
+3. **Add physical realism for hit reactions**:
+   - **Natural Stumble Reward** (+0.1 per hit reaction):
+     - Reward if stumble direction matches hit direction (physics realism)
+     - Penalize unnatural reactions (stumbling toward hit)
+   - **Appropriate Brace Timing** (+0.2 per well-timed brace):
+     - Reward for bracing just before hit lands
+     - Requires prediction of incoming attack
+   - **Counter-Rotation Usage** (+0.1 per spin recovery):
+     - Reward for using counter-rotation when spinning from hook
+
+4. **Add strategic fighting rewards**:
+   - **Fight Through Adversity** (+0.5):
+     - Reward for winning round despite being knocked down
+     - Encourages not giving up
+   - **Capitalize on Opponent's Stumble** (+0.3):
+     - Reward for attacking opponent who is stumbling/recovering
+     - Teaches to press advantage
+   - **Defensive Recovery** (+0.2 per defensive action during recovery):
+     - Reward for blocking or evading during recovery period
+     - Phase 4 will add blocking, placeholder for now
+
+5. **Add penalties for poor balance**:
+   - **Falling Penalty** (-1.0 per fall/knockdown):
+     - Negative reward for losing balance completely
+     - Encourages balance maintenance
+   - **Extended Recovery Penalty** (-0.05 per frame stumbling beyond threshold):
+     - Penalize prolonged recovery times
+     - Encourages efficient recovery actions
+   - **Failed Brace Penalty** (-0.1 if bracing but still stumble significantly):
+     - Penalize ineffective brace timing
+
+6. **Add sparse milestone rewards**:
+   - **Iron Chin Bonus** (+5.0): Take 5+ hits in round without knockdown
+   - **Rocky Comeback** (+10.0): Win round after being knocked down
+   - **Unshakeable** (+3.0): Win round without stumbling
+
+7. **Update reward weight balance**:
+   - Combat effectiveness: 0.4
+   - Physical realism: 0.25 (increased to emphasize realistic reactions)
+   - Strategic depth: 0.2
+   - Player entertainment: 0.15
+
+8. **Handle knockdown scenario**:
+   - During knockdown, minimal rewards (only recovery rewards)
+   - Large penalty for staying down too long
+   - Large reward for successful stand-up
+
+9. **Add reward debugging for balance**:
+   - Log balance stability metric
+   - Track stumble duration statistics
+   - Monitor recovery effectiveness
+   - Visualize balance rewards separately
 
 **Verification Checklist:**
-- [ ] Zero Input System compilation errors
-- [ ] CharacterInput.cs compiles and works
-- [ ] Input callbacks fire correctly
-- [ ] Character responds to keyboard input
-- [ ] Combat inputs work (attack, block, dodge)
-- [ ] Movement inputs work (WASD, directional)
+- [ ] Balance stability reward calculated correctly
+- [ ] Recovery time tracked and rewarded
+- [ ] Stumble direction realism checked
+- [ ] Brace timing detection works
+- [ ] Knockdown penalties applied
+- [ ] Recovery action effectiveness measured
+- [ ] Milestone rewards trigger appropriately
 
 **Testing Instructions:**
-- Enter Play mode with MainScene
-- Test all input bindings:
-  - Movement (WASD or arrows)
-  - Light attack
-  - Heavy attack
-  - Block
-  - Dodge
-- Verify character responds correctly
-- Check Console for input errors
+- Manual Heuristic testing:
+  - Maintain balance and observe rewards
+  - Get hit, recover quickly, check recovery rewards
+  - Use brace effectively and verify timing rewards
+  - Get knocked down and observe penalties
+- Verify reward balance doesn't dominate other components
 
 **Commit Message Template:**
 ```
-fix(input): update Input System API calls for Unity 6
+feat(rewards): implement balance and recovery reward function
 
-Updated input callbacks and value reading APIs
-Fixed character input integration
+- Added balance maintenance rewards (stability, avoid stumble, grounding)
+- Added recovery performance rewards (quick recovery, action effectiveness)
+- Added physical realism rewards (natural stumble, brace timing, counter-rotation)
+- Added strategic fighting rewards (capitalize on stumbles, fight through adversity)
+- Added penalties for poor balance and extended recovery
+- Added sparse milestone rewards (iron chin, rocky comeback)
+- Updated reward weights to emphasize physical realism
+- Implemented knockdown scenario reward handling
+- Added balance-specific reward debugging and logging
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~4,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Update Cinemachine Package
+## Task 5: Create Balance Training Configuration
 
-**Goal:** Update Cinemachine from 2.10.1 to Unity 6-compatible version (likely 3.x)
+**Goal:** Configure ML-Agents training for balance and hit reaction learning.
 
 **Files to Modify/Create:**
-- `Packages/manifest.json` (Package Manager will modify)
-- Cinemachine camera components (may need reconfiguration)
-- Scripts referencing Cinemachine APIs
+- `Assets/Knockout/Training/Config/balance_training.yaml` (new)
 
 **Prerequisites:**
-- Tasks 1-4 complete (URP and Input System updated)
+- Task 4 completed (balance rewards implemented)
 
 **Implementation Steps:**
 
-1. Open Package Manager
-2. Find "Cinemachine" in Unity Registry
-3. Check current version (2.10.1 from Unity 2021.3)
-4. **NOTE:** Unity 6 likely uses Cinemachine 3.x (major version jump)
-5. Review Cinemachine upgrade guide if major version change
-6. Update Cinemachine package to latest Unity 6 version
-7. Unity may show migration dialog for Cinemachine components:
-   - Review proposed changes
-   - Accept automatic migration
-8. Wait for reimport to complete
-9. Open scenes with Cinemachine cameras (MainScene likely has virtual cameras)
-10. Check that Cinemachine Virtual Cameras still exist in Hierarchy
-11. Verify camera components haven't lost settings:
-    - Check Follow target (should still reference player)
-    - Check Look At target
-    - Check Body settings (Framing Transposer or similar)
-    - Check Aim settings
-12. Test camera in Play mode (camera should follow character)
+1. **Create balance_training.yaml** based on attack_training.yaml
+
+2. **Update hyperparameters**:
+   - `batch_size: 4096` (maintain complexity handling)
+   - `buffer_size: 40960`
+   - `learning_rate: 2e-4`
+   - `beta: 6e-3` (slightly lower than attack training, less exploration needed)
+   - `max_steps: 6000000`
+
+3. **Network architecture**:
+   - `hidden_units: 384` (maintain from Phase 2)
+   - `num_layers: 3`
+
+4. **Configure transfer learning** from Phase 2:
+   - Use `--initialize-from=attack_phase2`
+   - Agent keeps movement and attack skills while learning balance
+
+5. **Self-play settings**:
+   - `save_steps: 100000`
+   - `play_against_latest_model_ratio: 0.6`
+
+6. **Add curriculum for balance difficulty** (optional):
+   - Lesson 1: Light hits (low force), easy to recover
+   - Lesson 2: Medium hits, require recovery actions
+   - Lesson 3: Full force hits, knockdowns possible
+   - Use ML-Agents curriculum parameter feature
 
 **Verification Checklist:**
-- [ ] Cinemachine updated to Unity 6 version (likely 3.x)
-- [ ] Virtual Camera components still exist in scenes
-- [ ] Camera settings intact (Follow, Look At, Body, Aim)
-- [ ] No Cinemachine compilation errors
-- [ ] Camera follows character in Play mode
+- [ ] balance_training.yaml valid syntax
+- [ ] Transfer learning configured
+- [ ] Hyperparameters appropriate
+- [ ] Curriculum defined (if using)
 
 **Testing Instructions:**
-- Load MainScene
-- Check Hierarchy for Cinemachine Virtual Camera
-- Inspect camera in Inspector (settings should be intact)
-- Enter Play mode
-- Move character and verify camera follows
-- Test camera framing and behavior
+- Validate config before training
 
 **Commit Message Template:**
 ```
-feat(cinemachine): update Cinemachine to Unity 6
+feat(training): create balance training configuration
 
-Updated Cinemachine from 2.10.1 to [new version]
-Migrated virtual camera components
+- Created balance_training.yaml based on attack config
+- Configured transfer learning from Phase 2 model
+- Maintained network architecture for consistency
+- Set max steps to 6M for balance learning
+- Configured curriculum for progressive difficulty
+- Tuned entropy for balance exploration
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~4,500
+**Estimated tokens:** ~7,000
 
 ---
 
-### Task 6: Fix Cinemachine API Changes
+## Task 6: Train Balance Agent and Evaluate
 
-**Goal:** Update any scripts that reference Cinemachine APIs to Unity 6 version
+**Goal:** Execute training and evaluate balance recovery behavior.
 
 **Files to Modify/Create:**
-- Scripts that reference Cinemachine (if any exist)
-- Camera controller scripts
+- `Assets/Knockout/Training/Models/balance_phase3.onnx`
+- `docs/TRAINING_LOG.md` (update)
 
 **Prerequisites:**
-- Task 5 complete (Cinemachine updated)
+- Tasks 1-5 completed
+- Phase 2 model available
 
 **Implementation Steps:**
 
-1. Check Console for Cinemachine-related compilation errors
-2. Search codebase for Cinemachine references:
-   - Look for `using Cinemachine;` statements
-   - Check for CinemachineVirtualCamera references
-   - Look for CinemachineBrain usage
-3. Common Cinemachine 3.x changes (if applicable):
-   - Namespace changes
-   - Component name changes (VirtualCamera API updates)
-   - Extension API changes
-4. Update scripts with Cinemachine API calls:
-   - Update namespaces if changed
-   - Update component references
-   - Fix method calls that changed
-5. If no custom Cinemachine scripts exist, verify automatic migration worked:
-   - Check that cameras in scenes still function
-   - Verify no broken component references
-6. Test camera behavior in Play mode thoroughly
+1. **Start training**:
+   ```bash
+   mlagents-learn Assets/Knockout/Training/Config/balance_training.yaml --run-id=balance_phase3 --initialize-from=attack_phase2 --time-scale=20
+   ```
+
+2. **Monitor balance-specific metrics**:
+   - Stumble frequency (should decrease)
+   - Knockdown rate (should decrease)
+   - Average recovery time (should decrease)
+   - Balance stability metric (should increase)
+
+3. **Training duration**: 4-6M steps (~3-5 hours)
+
+4. **Evaluate trained model**:
+   - Quantitative:
+     - Knockdown rate compared to Phase 2
+     - Average time to recover balance
+     - Percentage of hits absorbed without stumbling
+   - Qualitative:
+     - [ ] Agents stumble realistically when hit
+     - [ ] Stumble direction matches hit direction
+     - [ ] Agents use recovery actions to regain balance
+     - [ ] Brace reduces knockback visibly
+     - [ ] Quick recovery allows continued fighting
+     - [ ] Knockdowns occur only on very hard hits
+     - [ ] Agents stand up from knockdowns
+     - [ ] Balance maintained during normal movement (Phase 1 quality retained)
+     - [ ] Attack execution maintained (Phase 2 quality retained)
+
+5. **Compare to Phase 2**:
+   - Should retain attack and movement capabilities
+   - Plus now recover from hits effectively
+
+6. **Export model** as `balance_phase3.onnx`
+
+7. **Document results** in `docs/TRAINING_LOG.md`
+
+8. **Troubleshooting**:
+   - **Agents ignore recovery actions**: Increase recovery rewards
+   - **Too many knockdowns**: Lower knockdown force threshold
+   - **Unrealistic stumbles**: Adjust hit reaction force application
+   - **Skills degraded**: Use transfer learning, increase reward weights for prior skills
 
 **Verification Checklist:**
-- [ ] Zero Cinemachine compilation errors
-- [ ] Cinemachine API calls updated (if any custom scripts exist)
-- [ ] Camera follows character smoothly
-- [ ] Camera framing works correctly
-- [ ] No broken Cinemachine component references
-
-**Testing Instructions:**
-- Search project for "using Cinemachine" to find affected scripts
-- Compile and verify zero errors
-- Enter Play mode and test camera:
-  - Camera follows character
-  - Camera framing appropriate
-  - No jittering or errors
-  - Camera transitions work (if multiple cameras exist)
+- [ ] Training completes successfully
+- [ ] Stumble behavior looks realistic
+- [ ] Recovery actions functional
+- [ ] Knockdown rate reasonable (<20% of hits)
+- [ ] Previous skills (movement, attacks) maintained
+- [ ] Model exported and tested
 
 **Commit Message Template:**
 ```
-fix(cinemachine): resolve Cinemachine API compatibility
+feat(training): train balance recovery agent
 
-Updated Cinemachine API calls for Unity 6
-Fixed camera integration
+- Trained for 5M steps with transfer learning from Phase 2
+- Agents demonstrate realistic hit reactions and stumbling
+- Recovery actions reduce knockdown rate by 40%
+- Balance stability improved significantly
+- Movement and attack quality maintained from previous phases
+- Exported balance_phase3.onnx model
+- Documented training in TRAINING_LOG.md
 
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+ðŸ¤– Generated with [Claude Code](https://claude.com/claude-code)
 
-> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~3,500
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 7: Update Remaining Unity Packages
+## Phase 3 Verification
 
-**Goal:** Update all other Unity packages to Unity 6-compatible versions
+Complete before proceeding to Phase 4:
 
-**Files to Modify/Create:**
-- `Packages/manifest.json`
+### Observations
+- [ ] Balance state observations added (~18 new)
+- [ ] Total observation space ~87 dimensions
+- [ ] Hit impact data captured correctly
+- [ ] Recovery status tracked
 
-**Prerequisites:**
-- Tasks 1-6 complete (URP, Input, Cinemachine updated)
+### Actions
+- [ ] Balance recovery actions added (total 20 actions)
+- [ ] Recovery step, brace, counter-rotation functional
+- [ ] Actions execute only in appropriate states
 
-**Implementation Steps:**
+### Physics Controllers
+- [ ] BalanceController implemented
+- [ ] Hit reactions apply forces realistically
+- [ ] Stumbling simulated naturally
+- [ ] Balance recovery PD controller working
+- [ ] Brace reduces impact effectively
+- [ ] Knockdowns occur at appropriate thresholds
 
-1. Open Package Manager
-2. Update remaining packages in order of importance:
-   - **TextMesh Pro** (3.0.6 ’ Unity 6 version)
-   - **ProBuilder** (5.2.3 ’ Unity 6 version, likely 6.x)
-   - **Timeline** (1.6.5 ’ Unity 6 version)
-   - **Test Framework** (1.1.33 ’ Unity 6 version)
-   - **Visual Scripting** (1.9.4 ’ Unity 6 version, if used)
-3. For each package:
-   - Select package in Package Manager
-   - Click "Update to [version]"
-   - Wait for download and import
-   - Check Console for errors
-   - Verify no breaking changes
-4. Check for package-specific migration dialogs and accept upgrades
-5. After all packages updated, perform full project reimport (Assets > Reimport All)
-6. Verify all packages updated in Package Manager
-7. Verify `Packages/manifest.json` shows new versions
+### Reward Function
+- [ ] Balance maintenance rewards
+- [ ] Recovery performance rewards
+- [ ] Physical realism rewards for reactions
+- [ ] Strategic fighting rewards
+- [ ] Penalties for poor balance
 
-**Verification Checklist:**
-- [ ] All Unity packages updated to Unity 6 versions
-- [ ] TextMesh Pro updated (UI should still work)
-- [ ] ProBuilder updated (if scenes use ProBuilder geometry)
-- [ ] Timeline updated
-- [ ] Test Framework updated
-- [ ] Full reimport completed successfully
-- [ ] No compilation errors
+### Training Results
+- [ ] Training completed for at least 4M steps
+- [ ] Knockdown rate decreased from Phase 2
+- [ ] Recovery time improved
+- [ ] Hit reactions look realistic
+- [ ] Previous skills maintained
+- [ ] Model exported as balance_phase3.onnx
 
-**Testing Instructions:**
-- Check Package Manager - all packages should show Unity 6 versions
-- Load scenes and verify no broken references
-- Check UI elements (TextMesh Pro)
-- Verify ProBuilder geometry still intact (if used)
-- Run a timeline (if project uses timelines)
-- Check Console for errors
-
-**Commit Message Template:**
-```
-feat(packages): update all Unity packages to Unity 6
-
-Updated TextMesh Pro, ProBuilder, Timeline, Test Framework
-All packages now Unity 6-compatible
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-
-> Generated with Claude Code
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-**Estimated tokens:** ~4,000
+### Known Limitations
+- Recovery may be slower than desired (tune PD controller)
+- Some knockdowns may look unnatural (physics tuning)
+- Agents may "tank" hits rather than evade (Phase 4 will add defense)
 
 ---
 
-### Task 8: Test Core Gameplay After Package Updates
+## Next Steps
 
-**Goal:** Verify core gameplay systems work after all package updates
-
-**Files to Modify/Create:**
-- None (testing only)
-
-**Prerequisites:**
-- Task 7 complete (all packages updated)
-
-**Implementation Steps:**
-
-1. Open MainScene in Unity Editor
-2. Enter Play mode and perform comprehensive gameplay test:
-   - **Character Movement:**
-     - Move character with WASD/arrows
-     - Verify smooth movement
-     - Check character responds to input correctly
-   - **Combat System:**
-     - Perform light attacks
-     - Perform heavy attacks
-     - Test blocking
-     - Test dodging
-     - Verify combat animations play
-   - **AI System:**
-     - Check that AI opponent exists
-     - Verify AI responds to player
-     - Test AI attacks player
-     - Check AI state machine behavior
-   - **UI System:**
-     - Verify health bars display
-     - Check stamina bar works
-     - Test combo counter
-     - Verify round timer displays
-   - **Camera:**
-     - Verify camera follows player
-     - Check camera framing
-     - Move around and test camera behavior
-   - **Audio:**
-     - Listen for audio cues
-     - Verify sound effects play
-     - Check background music (if any)
-3. Play for 3-5 minutes and note any issues:
-   - Document runtime errors in Console
-   - Note visual glitches
-   - Record input issues
-   - Document AI problems
-4. Exit Play mode cleanly
-5. Document findings in `docs/migration/PHASE3_GAMEPLAY_TEST.md`
-
-**Verification Checklist:**
-- [ ] Character movement works
-- [ ] Combat system functional (attacks, blocking, dodging)
-- [ ] AI opponent responsive
-- [ ] UI displays correctly
-- [ ] Camera follows character
-- [ ] Audio plays (if applicable)
-- [ ] No critical runtime errors (warnings acceptable)
-- [ ] Game is playable (even if bugs exist)
-
-**Testing Instructions:**
-- Play full round of combat against AI
-- Test all combat moves
-- Verify all systems respond
-- Document bugs but don't fix yet (Phase 4)
-- Exit Play mode without crashes
-
-**Commit Message Template:**
-```
-test(migration): verify core gameplay after package updates
-
-Tested movement, combat, AI, UI, camera, audio
-Core systems functional, documented runtime issues for Phase 4
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-
-> Generated with Claude Code
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-**Estimated tokens:** ~5,000
-
----
-
-### Task 9: Tag Package Update Completion
-
-**Goal:** Create git checkpoint after successful package updates
-
-**Files to Modify/Create:**
-- `docs/migration/UPGRADE_CHECKLIST.md` (update progress)
-
-**Prerequisites:**
-- Task 8 complete (gameplay tested)
-
-**Implementation Steps:**
-
-1. Verify all changes committed
-2. Create git tag "post-package-updates"
-3. Update `docs/migration/UPGRADE_CHECKLIST.md`:
-   - Mark Phase 3 complete
-   - Note package versions achieved
-   - Document any deferred issues
-4. Create Phase 3 summary:
-   - Packages updated (URP, Input System, Cinemachine, etc.)
-   - Gameplay status (functional/issues)
-   - Time spent
-   - Next phase focus (testing)
-5. Commit documentation updates
-
-**Verification Checklist:**
-- [ ] All code changes committed
-- [ ] Git tag "post-package-updates" exists
-- [ ] UPGRADE_CHECKLIST.md updated
-- [ ] Phase 3 summary documented
-- [ ] Packages/ manifest.json shows Unity 6 versions
-
-**Testing Instructions:**
-- Run `git tag` and verify tag exists
-- Check `Packages/manifest.json` for updated versions
-- Verify git status is clean
-
-**Commit Message Template:**
-```
-chore(migration): complete Phase 3 package updates
-
- All Unity packages updated to Unity 6
- URP, Input System, Cinemachine functional
- Core gameplay systems working
-   Some runtime bugs exist (Phase 4 will address)
-
-Tagged as 'post-package-updates'
-
-Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
-
-> Generated with Claude Code
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-**Estimated tokens:** ~3,000
-
----
-
-## Phase Verification
-
-After completing all tasks in Phase 3, verify the following:
-
-### Package Updates Complete
-- [ ] URP updated to Unity 6 version
-- [ ] Input System updated
-- [ ] Cinemachine updated
-- [ ] TextMesh Pro updated
-- [ ] ProBuilder updated
-- [ ] Timeline updated
-- [ ] Test Framework updated
-- [ ] All packages show Unity 6-compatible versions
-
-### Compilation Clean
-- [ ] Zero compilation errors
-- [ ] All scripts compile successfully
-- [ ] Package-related APIs updated
-
-### Gameplay Functional
-- [ ] Character movement responsive
-- [ ] Combat system works (attacks, blocking, dodging)
-- [ ] AI opponent functional
-- [ ] UI displays correctly
-- [ ] Camera follows character
-- [ ] Audio plays
-
-### Documentation
-- [ ] PHASE3_GAMEPLAY_TEST.md documents gameplay status
-- [ ] UPGRADE_CHECKLIST.md updated
-- [ ] Git tag "post-package-updates" created
-
-### Known Issues (Expected)
-- [ ] Some test failures (Phase 4 will fix)
-- [ ] Minor visual glitches (acceptable)
-- [ ] Occasional runtime warnings (acceptable)
-- [ ] Performance not optimized yet (Phase 7)
-
----
-
-## Known Limitations and Technical Debt
-
-**Deferred to Later Phases:**
-- Test failures (Phase 4) - tests may not all pass yet
-- Performance optimization (Phase 7) - haven't optimized yet
-- WebGL build testing (Phase 7) - haven't built for WebGL yet
-
-**Potential Issues:**
-- Cinemachine 3.x may have different behavior than 2.x (test thoroughly)
-- URP rendering may look slightly different (expected with major version jump)
-- Input System may have subtle timing differences
-
----
-
-## Next Phase
-
-Once Phase 3 verification is complete:
-- Proceed to [Phase-4.md](Phase-4.md) - Test Suite Migration & Fixes
-- Phase 4 will systematically fix all test failures
-- Tests will guide remaining bug fixes
-
-**Estimated time for Phase 3:** 8-16 hours (package updates and testing)
+After Phase 3 completion:
+- **[Phase 4: Defensive Positioning](Phase-4.md)** - Add blocking, dodging, and defensive movement
+- Ensure balance_phase3.onnx saved before proceeding
