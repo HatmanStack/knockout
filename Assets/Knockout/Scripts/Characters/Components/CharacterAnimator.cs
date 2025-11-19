@@ -28,6 +28,11 @@ namespace Knockout.Characters.Components
             public const string IsBlocking = "IsBlocking";
             public const string UpperBodyWeight = "UpperBodyWeight";
 
+            // Dodge parameters
+            public const string DodgeLeft = "DodgeLeft";
+            public const string DodgeRight = "DodgeRight";
+            public const string DodgeBack = "DodgeBack";
+
             // Hit reaction parameters
             public const string HitReaction = "HitReaction";
             public const string HitType = "HitType";
@@ -150,6 +155,36 @@ namespace Knockout.Characters.Components
             if (_animator == null) return;
 
             _animator.SetBool(AnimatorParams.IsBlocking, isBlocking);
+        }
+
+        /// <summary>
+        /// Triggers a left dodge animation.
+        /// </summary>
+        public void TriggerDodgeLeft()
+        {
+            if (_animator == null) return;
+
+            _animator.SetTrigger(AnimatorParams.DodgeLeft);
+        }
+
+        /// <summary>
+        /// Triggers a right dodge animation.
+        /// </summary>
+        public void TriggerDodgeRight()
+        {
+            if (_animator == null) return;
+
+            _animator.SetTrigger(AnimatorParams.DodgeRight);
+        }
+
+        /// <summary>
+        /// Triggers a back dodge animation.
+        /// </summary>
+        public void TriggerDodgeBack()
+        {
+            if (_animator == null) return;
+
+            _animator.SetTrigger(AnimatorParams.DodgeBack);
         }
 
         #endregion
