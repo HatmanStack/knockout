@@ -212,7 +212,7 @@ Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 **Overall Status:**
 - **Without Unity Editor:** 14/18 items complete (78%)
 - **All addressable items:** 14/14 complete (100%)
-- **Deferred items:** 4 (documented in UNITY_EDITOR_INSTRUCTIONS.md)
+- **Deferred items:** 4 (documented in MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md)
 
 **Verification Commands:**
 ```bash
@@ -268,7 +268,7 @@ $ ls /root/knockout-2021.3-2025-11-19.tar.gz
 - ⚠️ Task 5: Establish Performance Baselines (template created)
 - ⚠️ Task 8: Verify Project Opens in Unity 2021.3
 
-**All deferred tasks documented in:** `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+**All deferred tasks documented in:** `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
 
 ### Deliverables:
 - **Documentation:** 1,534 lines across 4 files

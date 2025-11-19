@@ -15,7 +15,7 @@
 
 1. **Comprehensive Unity Editor Instructions**
    - Created detailed step-by-step instructions for all 8 Phase 2 tasks
-   - Documented in `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+   - Documented in `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
    - Each task includes:
      - Goal and purpose
      - Detailed implementation steps (10+ steps per task)
@@ -83,7 +83,7 @@ When Unity Editor becomes available, everything is prepared:
 
 ### ✅ Complete Documentation
 
-**Location:** `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` (Phase 2 section)
+**Location:** `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` (Phase 2 section)
 
 **Task 2-1: Open Project in Unity 6.0** (30-60 min)
 - 11-step detailed procedure
@@ -239,7 +239,7 @@ These are **normal and acceptable** after Phase 2:
    - [ ] Git tag "pre-unity6-upgrade" exists
 
 2. **Begin Phase 2 Execution**
-   - Open `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+   - Open `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
    - Navigate to "Phase 2: Unity Editor Tasks"
    - Follow Task 2-1 instructions precisely
    - Continue through Task 2-8 sequentially
@@ -334,7 +334,7 @@ Phase 2 must complete successfully before:
 ### Primary Documents
 
 - **Phase 2 Plan:** `docs/plans/Phase-2.md`
-- **Unity Editor Instructions:** `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` (Phase 2 section)
+- **Unity Editor Instructions:** `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` (Phase 2 section)
 - **Upgrade Checklist:** `docs/migration/UPGRADE_CHECKLIST.md` (Phase 2 section)
 - **This Summary:** `docs/migration/PHASE2_COMPLETION_SUMMARY.md`
 
@@ -372,7 +372,7 @@ Phase 2 must complete successfully before:
 
 All 8 tasks have comprehensive step-by-step instructions, verification checklists, commit message templates, and troubleshooting guidance. The phase cannot be started without Unity Editor, but once Editor access is available, execution can proceed immediately with confidence.
 
-**Next Action:** When Unity Editor is available, open `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` and begin with Task 2-1.
+**Next Action:** When Unity Editor is available, open `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` and begin with Task 2-1.
 
 ---
 

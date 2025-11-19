@@ -72,7 +72,7 @@ The Unity 6.0 migration is **blocked at Phase 2** due to Unity Editor dependency
 **No implementation possible without Unity Editor, but documentation is ready:**
 
 1. ✅ **Comprehensive Unity Editor Instructions**
-   - Created: `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+   - Created: `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
    - 521 lines added with detailed step-by-step instructions
    - All 8 Phase 2 tasks documented with:
      - Implementation steps (10+ per task)
@@ -139,7 +139,7 @@ All subsequent phases require Unity Editor:
    - Task 8: Verify Unity 2021.3 health
 
 2. **Phase 2: Unity 6 upgrade** (4-8 hours)
-   - Follow `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+   - Follow `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
    - All 8 tasks have detailed step-by-step instructions
    - Commit templates provided
    - Verification checklists included
@@ -167,7 +167,7 @@ All subsequent phases require Unity Editor:
 3. `docs/migration/UPGRADE_CHECKLIST.md` (834 lines) - Progress tracking
 4. `docs/migration/PHASE2_COMPLETION_SUMMARY.md` (382 lines) - Phase 2 readiness
 5. `docs/migration/PERFORMANCE_BASELINE.md` (template only) - Awaiting Unity Editor
-6. `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` (expanded) - Step-by-step guide
+6. `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` (expanded) - Step-by-step guide
 7. `docs/migration/MIGRATION_STATUS.md` (this file) - Current status
 
 ### Phase Plans (8 files)
@@ -225,7 +225,7 @@ b2cbf11 docs(migration): document current Unity 2021.3 project state
 4. ~25-30GB disk space
 
 **Then:**
-- Follow `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+- Follow `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
 - Complete Phase 1 remaining tasks (1-2 hours)
 - Execute Phase 2 (4-8 hours)
 - Continue through Phases 3-7 (40-60 hours)

@@ -17,7 +17,7 @@
 **Issue:** Plan assumes Unity Editor access, but execution will be without Unity Editor
 **Impact:** Phases 2-7 cannot be fully validated without Unity Editor
 **Fix Applied:**
-- Created `UNITY_EDITOR_INSTRUCTIONS.md` consolidating all Unity Editor tasks
+- Created `MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` consolidating all Unity Editor tasks
 - Updated README.md with Unity Editor constraint warnings
 - Added "What CAN/CANNOT be done" guidance
 - Set expectation: code changes are "prepared, not verified"
@@ -59,7 +59,7 @@
 
 ## New Files Created
 
-### 1. UNITY_EDITOR_INSTRUCTIONS.md
+### 1. MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md
 **Purpose:** Consolidates all Unity Editor-dependent tasks
 **Content:**
 - Lists all tasks that require Unity Editor
@@ -189,14 +189,14 @@ git config user.email "82614182+HatmanStack@users.noreply.github.com"
 
 **Critical fixes applied:**
 - Unity Editor constraint documented ✓
-- UNITY_EDITOR_INSTRUCTIONS.md created ✓
+- MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md created ✓
 - README.md updated with constraints ✓
 - Expectations set for code-only execution ✓
 - Commit message format documented ✓
 - COMMIT_MESSAGE_FIX.md created ✓
 
 **Files created:**
-- UNITY_EDITOR_INSTRUCTIONS.md ✓
+- MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md ✓
 - REVIEW_FIXES.md ✓
 - COMMIT_MESSAGE_FIX.md ✓
 

@@ -25,17 +25,17 @@ Most migration tasks normally require Unity Editor, but code changes will be pre
 
 **IMPORTANT:** When implementing phases, ALL tasks that require Unity Editor access must be:
 
-1. **Documented in `UNITY_EDITOR_INSTRUCTIONS.md`** with detailed step-by-step instructions
+1. **Documented in `MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`** with detailed step-by-step instructions
 2. **Marked as incomplete** in the phase completion summary
-3. **Added to the appropriate phase section** in UNITY_EDITOR_INSTRUCTIONS.md
+3. **Added to the appropriate phase section** in MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md
 
 **DO NOT** attempt Unity Editor tasks without Editor access. Instead:
 - Document what needs to be done
-- Append detailed instructions to UNITY_EDITOR_INSTRUCTIONS.md
+- Append detailed instructions to MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md
 - Mark the task as "deferred - requires Unity Editor"
 - Continue with tasks that can be completed
 
-See `UNITY_EDITOR_INSTRUCTIONS.md` for the complete list of all tasks requiring Unity Editor across all phases.
+See `MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` for the complete list of all tasks requiring Unity Editor across all phases.
 
 ## Prerequisites
 

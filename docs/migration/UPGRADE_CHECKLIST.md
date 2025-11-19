@@ -194,7 +194,7 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 **Status:** ⚠️ Ready for Execution (Unity Editor Required)
 **Estimated Time:** 4-8 hours
 **Rollback Tag:** `post-unity6-upgrade` (create after completion)
-**Documentation:** See `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` for detailed step-by-step instructions
+**Documentation:** See `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` for detailed step-by-step instructions
 
 ### Unity Editor Requirement
 
@@ -206,7 +206,7 @@ Phase 2 cannot be started without Unity Editor because:
 - Fixing errors requires Unity compilation verification
 - All 8 tasks are Unity Editor-dependent
 
-**When Unity Editor becomes available:** Follow detailed instructions in `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` Phase 2 section (Tasks 2-1 through 2-8).
+**When Unity Editor becomes available:** Follow detailed instructions in `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md` Phase 2 section (Tasks 2-1 through 2-8).
 
 ### Prerequisites
 - [ ] Phase 1 Tasks 1, 5, 8 completed (Unity Editor verification)
@@ -344,7 +344,7 @@ Phase 2 cannot be started without Unity Editor because:
 **Blockers:** Unity Editor access required for ALL Phase 2 tasks
 
 **Documentation Created:**
-- ✅ Detailed Phase 2 instructions in `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+- ✅ Detailed Phase 2 instructions in `docs/plans/MIGRATION_UNITY_EDITOR_INSTRUCTIONS.md`
 - ⚠️ PHASE2_ERRORS.md (will be created during Task 2-2)
 
 **Ready for Execution:** ✅ Yes (when Unity Editor becomes available)
