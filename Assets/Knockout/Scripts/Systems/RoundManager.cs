@@ -207,6 +207,9 @@ namespace Knockout.Systems
                 aiHealth.ResetHealth();
             }
 
+            // Reset combos for all characters
+            ResetAllCombos();
+
             // Fire round start event
             OnRoundStart?.Invoke(_currentRoundNumber);
 
@@ -248,6 +251,9 @@ namespace Knockout.Systems
             {
                 _aiRoundWins++;
             }
+
+            // Reset combos at round end
+            ResetAllCombos();
 
             // Fire round end event
             OnRoundEnd?.Invoke(playerWon, _playerRoundWins, _aiRoundWins);
@@ -352,6 +358,24 @@ namespace Knockout.Systems
                 {
                     aiComponent.enabled = false;
                 }
+            }
+        }
+
+        #endregion
+
+        #region Combo Reset
+
+        /// <summary>
+        /// Resets combos for all characters in the scene.
+        /// </summary>
+        private void ResetAllCombos()
+        {
+            // Find all CharacterComboTracker components in scene
+            CharacterComboTracker[] comboTrackers = FindObjectsOfType<CharacterComboTracker>();
+
+            foreach (var tracker in comboTrackers)
+            {
+                tracker?.ResetCombo();
             }
         }
 
