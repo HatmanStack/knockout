@@ -42,6 +42,7 @@ namespace Knockout.Combat.States
             return newState is IdleState
                 || newState is HitStunnedState
                 || newState is KnockedDownState
+                || newState is SpecialKnockdownState
                 || newState is KnockedOutState;
         }
     }

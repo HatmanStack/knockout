@@ -41,6 +41,7 @@ namespace Knockout.Combat.States
             // Valid transitions
             return newState is IdleState
                 || newState is KnockedDownState
+                || newState is SpecialKnockdownState
                 || newState is KnockedOutState;
         }
     }

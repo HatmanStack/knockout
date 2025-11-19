@@ -362,6 +362,18 @@ namespace Knockout.Characters.Components
             _characterAnimator.TriggerKnockout();
         }
 
+        /// <summary>
+        /// Triggers a special knockdown.
+        /// Called by hit detection when hit by special move (Phase 4).
+        /// </summary>
+        public void TriggerSpecialKnockdown()
+        {
+            // Transition to special knockdown state
+            _stateMachine.ChangeState(new SpecialKnockdownState());
+
+            // Animation is triggered by SpecialKnockdownState.Enter()
+        }
+
         #endregion
 
         #region Hitbox Management

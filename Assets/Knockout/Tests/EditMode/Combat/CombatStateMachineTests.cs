@@ -212,5 +212,69 @@ namespace Knockout.Tests.EditMode.Combat
         }
 
         #endregion
+
+        #region SpecialKnockdownState Tests
+
+        [Test]
+        public void IdleState_CanTransitionTo_SpecialKnockdownState()
+        {
+            var idleState = new IdleState();
+            var specialKnockdownState = new SpecialKnockdownState();
+
+            Assert.IsTrue(idleState.CanTransitionTo(specialKnockdownState),
+                "Can be special knocked down from idle");
+        }
+
+        [Test]
+        public void AttackingState_CanTransitionTo_SpecialKnockdownState()
+        {
+            var attackingState = new AttackingState();
+            var specialKnockdownState = new SpecialKnockdownState();
+
+            Assert.IsTrue(attackingState.CanTransitionTo(specialKnockdownState),
+                "Can be special knocked down during attack");
+        }
+
+        [Test]
+        public void BlockingState_CanTransitionTo_SpecialKnockdownState()
+        {
+            var blockingState = new BlockingState();
+            var specialKnockdownState = new SpecialKnockdownState();
+
+            Assert.IsTrue(blockingState.CanTransitionTo(specialKnockdownState),
+                "Can be special knocked down while blocking");
+        }
+
+        [Test]
+        public void HitStunnedState_CanTransitionTo_SpecialKnockdownState()
+        {
+            var hitStunnedState = new HitStunnedState();
+            var specialKnockdownState = new SpecialKnockdownState();
+
+            Assert.IsTrue(hitStunnedState.CanTransitionTo(specialKnockdownState),
+                "Can be special knocked down while hit stunned");
+        }
+
+        [Test]
+        public void SpecialKnockdownState_CannotTransitionTo_AttackingState()
+        {
+            var specialKnockdownState = new SpecialKnockdownState();
+            var attackingState = new AttackingState();
+
+            Assert.IsFalse(specialKnockdownState.CanTransitionTo(attackingState),
+                "Cannot attack while in special knockdown");
+        }
+
+        [Test]
+        public void SpecialKnockdownState_CanTransitionTo_KnockedOutState()
+        {
+            var specialKnockdownState = new SpecialKnockdownState();
+            var knockedOutState = new KnockedOutState();
+
+            Assert.IsTrue(specialKnockdownState.CanTransitionTo(knockedOutState),
+                "Can be knocked out from special knockdown");
+        }
+
+        #endregion
     }
 }

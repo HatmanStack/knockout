@@ -39,6 +39,7 @@ namespace Knockout.Combat.States
                 || newState is ExhaustedState
                 || newState is HitStunnedState
                 || newState is KnockedDownState
+                || newState is SpecialKnockdownState
                 || newState is KnockedOutState;
         }
     }
