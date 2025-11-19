@@ -1,1104 +1,695 @@
-# Phase 4: Special Moves & Judge Scoring
-
-## Review Feedback (Iteration 1)
-
-### Task 8: CharacterScoring Component - Event Integration
-
-> **Consider:** Looking at `CharacterScoring.cs:202-204`, there's a note saying "We need an OnHitLanded event - this may not exist yet". Have you verified whether `CharacterCombat` actually fires events when hits land?
->
-> **Think about:** Running `Grep pattern: "public event.*OnHitLanded" in CharacterCombat.cs` shows no results. How can CharacterScoring track clean hits and damage dealt if there's no event to subscribe to?
->
-> **Reflect:** The plan at Task 8, line 517 specifies subscribing to "CharacterCombat: OnHitLanded, OnAttackBlocked, OnHitTaken". Are these events present in CharacterCombat? If not, what needs to be added?
->
-> **Consider:** At `CharacterScoring.cs:292`, there's another note: "We need to track if dodge actually avoided a hit". Are you counting all dodges, or only successful ones that avoided damage?
->
-> **Think about:** At `CharacterScoring.cs:312`, the comment says "This counts special move execution, not necessarily landing". Should scoring track when special moves are used, or when they successfully hit the opponent?
-
-### Task 8: Missing Event Handlers
-
-> **Reflect:** The `CharacterScoring` component subscribes to several events in `SubscribeToEvents()`. Have you implemented ALL the event handlers that the component needs?
->
-> **Consider:** Looking at lines 200-204, the combat event subscription is commented out with a note. What happens to clean hit tracking, damage tracking, and block tracking without these events?
->
-> **Think about:** Would adding the missing events to `CharacterCombat` (OnHitLanded, OnAttackBlocked, OnHitTaken) allow the scoring system to work as designed?
-
-### Integration Question
-
-> **Reflect:** The plan specifies comprehensive stat tracking including "Clean hits landed" and "Total damage dealt" (Task 8, step 3). Without hit events from CharacterCombat, how is your implementation tracking these stats?
->
-> **Consider:** Should `CharacterCombat` be extended to fire events when:
-> - A hit successfully lands (OnHitLanded with damage parameter)?
-> - An attack is blocked (OnAttackBlocked)?
-> - Character takes a hit (OnHitTaken with damage parameter)?
->
-> **Think about:** Would this require modifying Phase 3 (CharacterCombat) to add these events before Phase 4 scoring can work correctly?
-
----
+# Phase 4: Defensive Positioning & Blocking
 
 ## Phase Goal
 
-Implement character signature special moves with cooldown and stamina gating, plus comprehensive judge scoring system for round decisions. Special moves are powerful, unique techniques with dual-resource requirements. Judge scoring tracks all combat actions to determine round winners when time expires without knockout.
+Implement defensive behaviors including blocking, evasive movement, and defensive positioning. The agent will learn to recognize incoming attacks, activate blocking at appropriate times, use defensive footwork to avoid hits, and maintain a defensive fighting stance. This completes the core combat loop: movement, attacking, hit recovery, and defense.
 
 **Success Criteria:**
-- Special move system with cooldown + stamina cost gating
-- Each character has one signature special move
-- Special moves can trigger enhanced knockdown states
-- Comprehensive judge scoring tracking all combat metrics
-- Round decision logic based on accumulated scores
-- Momentum-based scoring (offense builds advantage, defense resets)
-- All systems configurable via ScriptableObjects
-- 85%+ test coverage
+- Defensive observations detect incoming threats
+- Blocking and evasion actions added to action space
+- Physics controllers handle blocking stance and defensive movement
+- Reward function encourages effective defense and damage mitigation
+- Agent learns to block attacks and evade strategically
+- Trained agent demonstrates defensive skills alongside offensive abilities
 
-**Estimated Tokens:** ~100,000
-
----
+**Estimated tokens:** ~85,000
 
 ## Prerequisites
 
-**Required Reading:**
-- [Phase 0: Foundation](Phase-0.md) - Special move and scoring design (DD-004, DD-005, ADR-006)
-- [Phase 1: Core Resource Systems](Phase-1.md) - Stamina system, SpecialKnockdownState
-- [Phase 2: Advanced Defense](Phase-2.md) - Parry system for scoring
-- [Phase 3: Combo System](Phase-3.md) - Combo tracking for scoring
-
-**Existing Systems to Understand:**
-- `CharacterStamina` - Stamina checking
-- `CharacterCombat` - Attack execution
-- `CharacterComboTracker` - Combo events
-- `RoundManager` - Round flow and timer
-- `SpecialKnockdownState` - Enhanced knockdown (Phase 1)
-
-**Environment:**
-- Unity 2021.3.8f1 LTS
+- Phase 0 completed
+- Phase 1 completed (movement)
+- Phase 2 completed (attacks)
+- Phase 3 completed (balance/recovery)
+- `balance_phase3.onnx` model available
+- Existing blocking system in CharacterCombat understood
 
 ---
 
-## Tasks
+## Task 1: Add Defensive Observations
 
-### Task 1: Create SpecialMoveData ScriptableObject
+**Goal:** Provide agent with information to recognize attack threats and evaluate defensive opportunities.
 
-**Goal:** Define special move configuration including damage, costs, and cooldown.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/SpecialMoveData.cs` - ScriptableObject class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (modify)
 
 **Prerequisites:**
-- Review `AttackData.cs` for ScriptableObject pattern
-- Understand DD-004 (Special Moves Design)
+- Phase 3 observations working (87 dimensions)
 
 **Implementation Steps:**
 
-1. Create `SpecialMoveData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Special Move Data"` (order = 8)
-3. Define special move properties:
-   - Special move name (string)
-   - Base attack reference (AttackData - special move uses as template)
-   - Damage multiplier (float, applied to base attack damage)
-   - Knockback multiplier (float)
-   - Cooldown duration (seconds)
-   - Stamina cost (float)
-   - Triggers special knockdown (bool)
-   - Special knockdown duration (seconds, if applicable)
-   - Animation trigger name (string)
-   - Visual/audio identifiers (optional)
-4. Expose public read-only properties
-5. Implement `OnValidate()`:
-   - Ensure cooldown > 0
-   - Ensure stamina cost > 0
-   - Clamp multipliers to reasonable ranges (1.0-3.0x)
-6. Add XML documentation and tooltips
+1. **Add incoming attack detection observations** (~8 observations):
+   - Opponent attack windup detected (boolean)
+   - Opponent attack type (one-hot 3D: jab/hook/uppercut)
+   - Time until opponent attack lands (normalized 0-1, based on animation frame)
+   - Attack trajectory intersects self position (boolean, ray cast prediction)
+   - Attack expected impact height (normalized: body/head)
+   - Attack expected impact force (normalized)
+   - Can block in time (boolean, based on block startup time vs attack time)
 
-**Design Guidance:**
-- Special move references existing AttackData (e.g., Hook) and enhances it
-- Default cooldown: 45 seconds (one per round approximately)
-- Default stamina cost: 40 (significant investment)
-- Damage multiplier: 2.0x (powerful but not one-shot)
-- Most special moves trigger special knockdown
+2. **Add defensive state observations** (~5 observations):
+   - Is currently blocking (boolean)
+   - Block stamina/endurance (normalized 0-1, if implementing block stamina system)
+   - Current guard position (normalized: low/mid/high)
+   - Time in defensive stance (normalized, capped at 3 seconds)
+   - Consecutive blocks count (normalized, tracks blocking streak)
+
+3. **Add positioning safety observations** (~4 observations):
+   - Distance to safe zone (away from opponent range, normalized)
+   - Is in opponent's preferred attack range (boolean, based on opponent's recent attack patterns)
+   - Escape route availability (boolean, can back away without hitting arena boundary)
+   - Cornered status (boolean, near arena boundary with limited movement)
+
+4. **Update total observation count**:
+   - Previous: ~87
+   - New defensive observations: ~17
+   - New total: ~104 observations
+   - Update BehaviorParameters Vector Observation Space Size to 104
+
+5. **Implement attack prediction logic**:
+   - Detect opponent animation state (windup)
+   - Estimate time to impact based on animation progress
+   - Ray cast from opponent's attacking limb to predict hit location
+   - Compare timing with agent's block activation time
+
+6. **Implement positioning safety calculations**:
+   - Determine safe distance (outside opponent's attack range)
+   - Check proximity to arena boundaries
+   - Evaluate escape routes (can move away without cornering self)
 
 **Verification Checklist:**
-- [ ] ScriptableObject appears in Create menu
-- [ ] OnValidate ensures valid configuration
-- [ ] Base attack reference required
-- [ ] All fields have tooltips and XML docs
+- [ ] Observation space updated to ~104 dimensions
+- [ ] Attack prediction detects opponent attacks accurately
+- [ ] Time-to-impact estimates reasonable
+- [ ] Blocking state observations track correctly
+- [ ] Positioning safety calculated properly
+- [ ] No NaN values
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/SpecialMoves/SpecialMoveDataTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate clamps multipliers to [1.0, 3.0]
-- OnValidate ensures cooldown > 0
-- OnValidate ensures stamina cost > 0
-- Default values match design spec
+- Manual testing: have opponent attack and verify observations update
+- Check attack prediction timing accuracy
+- Verify cornered detection at arena edges
 
 **Commit Message Template:**
 ```
-feat(special): add SpecialMoveData ScriptableObject
+feat(observations): add defensive and threat detection observations
 
-- Define special move properties and costs
-- Reference base attack for animation/timing
-- Configure cooldown and stamina gating
-- Support special knockdown configuration
+- Added incoming attack detection observations
+- Implemented attack prediction with time-to-impact estimation
+- Added defensive state observations (blocking, guard, stamina)
+- Added positioning safety observations (escape routes, cornered status)
+- Updated observation space to 104 dimensions
+- Implemented ray cast for attack trajectory prediction
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 2: Extend Input System for Special Move Input
+## Task 2: Add Defensive Actions
 
-**Goal:** Add special move input action to Input System.
+**Goal:** Expand action space to include blocking activation, guard positioning, and evasive movements.
 
-**Files to Modify:**
-- `Assets/Knockout/Input/KnockoutInputActions.inputactions` - Add special move action
-- `Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs` - Expose special move event
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (modify)
 
 **Prerequisites:**
-- Review Phase 2 dodge input integration
+- Task 1 completed (defensive observations added)
+- Phase 3 actions working (20 dimensions)
 
 **Implementation Steps:**
 
-1. Open KnockoutInputActions asset
-2. Add new action in "Gameplay" map:
-   - Action: `SpecialMove` (button binding, e.g., R key or gamepad trigger)
-3. Configure as button action (Press interaction)
-4. Regenerate C# input class if needed
-5. In CharacterInput:
-   - Add event: `public event Action OnSpecialMoveInput;`
-   - Fire event on special move button press
-   - Ensure event only fires when character can act
+1. **Utilize reserved action indices** from Phase 3 (indices 18-19) and expand:
+   - Movement actions (0-7): Unchanged
+   - Attack actions (8-12): Unchanged
+   - Recovery actions (13-17): Unchanged
+   - **Block activation** (index 18): Continuous [0, 1], threshold at 0.5 to activate
+   - **Guard height** (index 19): Continuous [0, 1], maps to low/mid/high guard
+   - **Evasion direction** (index 20): Continuous [-1, 1], lean/slip direction
+   - **Evasion intensity** (index 21): Continuous [0, 1], how much to evade
+   - **Defensive footwork** (index 22): Continuous [-1, 1], defensive circling direction
+   - **Total: 23 continuous actions**
 
-**Design Guidance:**
-- Special move is dedicated button, not combo of inputs
-- PC default: R key or middle mouse button
-- Gamepad: Right trigger or face button
-- Input should feel important (not accidental press)
+2. **Update BehaviorParameters**: Set Vector Action Space Size to 23
+
+3. **Interpret defensive actions in OnActionReceived**:
+   - Extract defensive actions (indices 18-22)
+   - Store in fields for execution in FixedUpdate
+   - Apply thresholding and mapping as needed
+
+4. **Implement blocking execution**:
+   - If block activation > 0.5 threshold:
+     - Call CharacterCombat.StartBlocking()
+     - Set guard height (low/mid/high) based on guard height action
+     - Maintain block until action falls below threshold
+   - Else if currently blocking:
+     - Call CharacterCombat.StopBlocking()
+
+5. **Implement evasion execution**:
+   - If evasion intensity > threshold (e.g., 0.3):
+     - Apply evasion: lean upper body in evasion direction
+     - Use Rigidbody rotation or IK to bend at waist
+     - "Slip" punches by moving head position
+     - Reduce during frames around opponent attack
+   - Subtle movements, not large dodges (more like head movement)
+
+6. **Implement defensive footwork**:
+   - Use defensive footwork action for circling while in defensive stance
+   - Combines with base movement but prioritizes safety
+   - Keeps opponent at optimal defensive distance
+
+7. **Coordinate blocking with other actions**:
+   - Blocking reduces movement speed (multiply movement by 0.5)
+   - Cannot attack while blocking
+   - Can still perform recovery actions while blocking
+
+8. **Update Heuristic for testing**:
+   - Map defensive controls:
+     - Left Shift: Block (already used in Phase 1, now activates defensive block)
+     - Num pad 8/2: Guard height (up/down)
+     - Num pad 4/6: Evasion direction (left/right)
+     - R: Toggle defensive footwork mode
 
 **Verification Checklist:**
-- [ ] SpecialMove action added to Input Actions
-- [ ] Binding configured for keyboard/gamepad
-- [ ] CharacterInput fires OnSpecialMoveInput event
-- [ ] No input conflicts
+- [ ] Action space updated to 23 dimensions
+- [ ] Block activation toggles blocking state
+- [ ] Guard height affects block coverage
+- [ ] Evasion creates visible lean/slip
+- [ ] Defensive footwork maintains safe distance
+- [ ] Actions coordinate properly (no blocking while attacking)
+- [ ] Heuristic controls work for testing
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Characters/CharacterInputTests.cs`
-
-Test cases:
-- OnSpecialMoveInput fires when button pressed
-- Event doesn't fire when character incapacitated
+- Manual Heuristic testing:
+  - Activate block and verify animation/state changes
+  - Test guard heights against incoming attacks
+  - Use evasion to slip punches
+  - Test defensive footwork circling
+- Verify blocking reduces damage (check CharacterCombat damage reduction)
 
 **Commit Message Template:**
 ```
-feat(special): add special move input action
+feat(actions): add defensive blocking and evasion actions
 
-- Add SpecialMove input action
-- Configure keyboard/gamepad bindings
-- Expose OnSpecialMoveInput event in CharacterInput
+- Expanded action space to 23 continuous actions
+- Added block activation and guard height actions
+- Added evasion direction and intensity actions
+- Added defensive footwork action
+- Implemented blocking execution via CharacterCombat
+- Implemented evasion with upper body lean/slip
+- Implemented defensive footwork for safe circling
+- Coordinated blocking with movement and attack limitations
+- Updated Heuristic with defensive control mappings
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 3: Create CharacterSpecialMoves Component
+## Task 3: Implement Defensive Physics Controllers
 
-**Goal:** Manage special move execution, cooldown tracking, and stamina gating.
+**Goal:** Create physics systems for blocking stance, defensive posture, and evasive movements.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterSpecialMoves.cs` - Component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/DefenseController.cs` (new)
 
 **Prerequisites:**
-- Task 1 complete (SpecialMoveData exists)
-- Task 2 complete (special move input)
-- Phase 1 complete (CharacterStamina exists)
+- Task 2 completed (defensive actions added)
 
 **Implementation Steps:**
 
-1. Create `CharacterSpecialMoves` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern:
-   - Dependencies: `CharacterController`, `SpecialMoveData`, `CharacterInput`, `CharacterStamina`, `CharacterCombat`
-   - Subscribe to `OnSpecialMoveInput` in `Initialize()`
-3. Track cooldown state:
-   - Current cooldown time remaining (float, counts down)
-   - Property: `IsOnCooldown` (bool)
-   - Property: `CooldownProgress` (0-1, for UI)
-   - Property: `CooldownTimeRemaining` (seconds)
-4. Implement special move execution:
-   - On input: check `CanUseSpecialMove()` (cooldown ready AND stamina available AND valid state)
-   - If yes: execute special move (trigger attack with enhanced properties)
-   - Consume stamina via CharacterStamina
-   - Start cooldown timer
-   - Fire `OnSpecialMoveUsed(SpecialMoveData)` event
-   - If no: fire `OnSpecialMoveFailed(FailureReason)` event (feedback)
-5. Implement cooldown countdown:
-   - In `Update()`: decrement cooldown time
-   - When cooldown reaches 0, fire `OnSpecialMoveReady` event
-6. Expose method `TryUseSpecialMove()` for manual/AI triggering
-7. Create enum `SpecialMoveFailureReason { OnCooldown, InsufficientStamina, InvalidState }`
+1. **Create DefenseController class**:
+   - Serialized parameters:
+     - Block effectiveness by guard height
+     - Defensive stance CoM offset (lower, more stable)
+     - Evasion angle limits
+     - Defensive footwork speed multiplier
+     - Block stamina drain rate (optional feature)
 
-**Design Guidance:**
-- Special move is double-gated: both cooldown and stamina must be available
-- Cooldown starts when special move initiated (not when it lands)
-- Special move executes like normal attack but with enhanced properties from SpecialMoveData
-- Cannot use special move while attacking, dodging, knocked down, etc.
+2. **Implement blocking stance physics**:
+   - Method: `ApplyBlockingStance(float guardHeight)`
+   - Lower center of mass for stability
+   - Tighten defensive posture (arms up, compact)
+   - Increase Rigidbody drag (harder to push around)
+   - Position guard at specified height:
+     - Low (0-0.33): Protect body/ribs
+     - Mid (0.33-0.67): General protection
+     - High (0.67-1.0): Protect head
+   - Visualize guard position with gizmos or debug objects
+
+3. **Implement damage mitigation**:
+   - Method: `CalculateBlockedDamage(AttackData attack, float guardHeight, Vector3 attackHeight)`
+   - If attack height matches guard height: 75% damage reduction (existing system)
+   - If mismatch: 25% damage reduction or none
+   - Apply additional physics: blocking absorbs force (less knockback)
+   - Integrate with CharacterHealth damage calculation
+
+4. **Implement evasion lean physics**:
+   - Method: `ApplyEvasionLean(float direction, float intensity)`
+   - Rotate upper body (spine/torso bones) in direction
+   - Use ConfigurableJoint or direct IK
+   - Shift head position laterally (slip punches)
+   - Amount based on intensity parameter
+   - Limit maximum lean angle (don't tip over)
+   - Return to neutral when evasion ends
+
+5. **Implement defensive footwork**:
+   - Method: `ApplyDefensiveFootwork(float circleDirection, Vector3 threatPosition)`
+   - Circle around opponent at safe distance
+   - Prioritize staying outside attack range
+   - Combine with base movement but override if too close
+   - Maintain facing toward threat
+   - Smooth, controlled movement (not panicked retreat)
+
+6. **Implement defensive posture**:
+   - Method: `ApplyDefensivePosture()`
+   - When in defensive mode:
+     - Crouch slightly (lower CoM from Phase 1)
+     - Weight on back foot (ready to retreat)
+     - Tuck chin (protect head)
+   - Affects balance and movement characteristics
+
+7. **Implement block stamina system** (optional but adds depth):
+   - Track block stamina (starts at 100)
+   - Drains while blocking (e.g., -5 per second)
+   - Drains faster when hit while blocking (-20 per hit)
+   - Regenerates when not blocking (+10 per second)
+   - If stamina depleted, block effectiveness reduced
+   - Observation space already includes stamina (Task 1)
+
+8. **Coordinate with attack system**:
+   - Blocking state should prevent attacks from executing
+   - Guard position affects attack availability
+   - Transition smoothly between offensive and defensive states
+
+9. **Integrate with PhysicsAgent**:
+   - In FixedUpdate:
+     - If blocking action active, apply blocking stance
+     - If evasion requested, apply lean
+     - Execute defensive footwork if defensive mode
+     - Update block stamina
+
+10. **Tune defensive parameters**:
+    - Block damage reduction: 75% (existing)
+    - Defensive CoM lowering: -0.2 units
+    - Max evasion lean angle: 25 degrees
+    - Defensive footwork speed: 0.7x normal
+    - Block stamina drain: -5/sec idle, -20 per hit
 
 **Verification Checklist:**
-- [ ] Component initializes correctly
-- [ ] Special move executes when available
-- [ ] Cooldown tracking functional
-- [ ] Stamina consumption works
-- [ ] Double-gating prevents use when either resource unavailable
-- [ ] Events fire correctly
+- [ ] DefenseController compiles without errors
+- [ ] Blocking stance lowers CoM and increases stability
+- [ ] Damage reduction works correctly with guard height matching
+- [ ] Evasion lean visible and natural-looking
+- [ ] Defensive footwork maintains safe distance
+- [ ] Block stamina system functions (if implemented)
+- [ ] Defensive actions coordinate with combat system
+- [ ] No physics instability from defensive postures
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/SpecialMoves/CharacterSpecialMovesTests.cs`
-
-Test cases:
-- TryUseSpecialMove succeeds when both resources available
-- TryUseSpecialMove fails when on cooldown
-- TryUseSpecialMove fails when insufficient stamina
-- TryUseSpecialMove fails when in invalid state
-- Cooldown counts down over time
-- OnSpecialMoveReady fires when cooldown expires
-- Stamina consumed on special move use
+- Manual Heuristic testing:
+  - Block incoming attacks, verify damage reduction
+  - Test guard height matching (high guard vs head punch)
+  - Use evasion to slip punches
+  - Observe defensive footwork keeping distance
+  - Monitor block stamina depletion and regen
+- Verify defensive stance doesn't break movement or balance
 
 **Commit Message Template:**
 ```
-feat(special): implement CharacterSpecialMoves component
+feat(physics-controllers): implement defensive physics controllers
 
-- Track cooldown and stamina gating
-- Execute special moves with enhanced properties
-- Fire events for UI/feedback
-- Double-gating prevents spam
+- Created DefenseController for defensive mechanics
+- Implemented blocking stance with lowered CoM and increased stability
+- Implemented guard height-based damage mitigation
+- Applied evasion lean with upper body rotation
+- Implemented defensive footwork for safe circling
+- Added defensive posture physics (crouch, weight shift)
+- Implemented block stamina system with drain and regen
+- Coordinated defensive actions with combat system
+- Tuned defensive parameters for balance and realism
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~10,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 4: Integrate Special Moves with Combat System
+## Task 4: Implement Defensive Reward Function
 
-**Goal:** Execute special moves as enhanced attacks through CharacterCombat.
+**Goal:** Reward effective defense, damage mitigation, and smart defensive positioning.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs` - Add special move execution path
-- `Assets/Knockout/Scripts/Combat/HitDetection/HitData.cs` - Add special move flag
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (modify)
 
 **Prerequisites:**
-- Task 3 complete (CharacterSpecialMoves exists)
-- Understand attack execution flow in CharacterCombat
+- Task 3 completed (defensive physics working)
 
 **Implementation Steps:**
 
-1. In HitData (or wherever hit information is stored):
-   - Add field: `isSpecialMove` (bool)
-   - Add field: `specialMoveData` (SpecialMoveData reference)
-2. In CharacterCombat:
-   - Add method `ExecuteSpecialMove(SpecialMoveData specialMove)`
-   - Execution flow:
-     - Use specialMove.BaseAttackData for animation and timing
-     - Apply specialMove.DamageMultiplier to damage calculation
-     - Apply specialMove.KnockbackMultiplier to knockback
-     - Flag hit as special move
-     - Trigger SpecialKnockdownState if specialMove.TriggersSpecialKnockdown
-3. CharacterSpecialMoves calls `CharacterCombat.ExecuteSpecialMove()` when executing special
-4. Hit detection recognizes special move flag and applies special knockdown
+1. **Add damage mitigation rewards**:
+   - **Successful Block Reward** (+0.5 per blocked hit):
+     - Reward for activating block before hit lands
+     - Scale by damage prevented
+   - **Perfect Block Reward** (+1.0 per perfect block):
+     - Bonus for matching guard height to attack height
+     - Full damage mitigation
+   - **Damage Prevented Reward** (+damage_prevented / max_health):
+     - Proportional to damage blocked
+     - Emphasizes defense effectiveness
 
-**Design Guidance:**
-- Special move execution reuses attack execution pipeline with modifiers
-- Special move is essentially "super-powered" version of base attack
-- Special knockdown triggered by special move hit, not normal attacks
+2. **Add defensive timing rewards**:
+   - **Anticipation Reward** (+0.3 per predicted block):
+     - Reward for blocking before opponent attack starts
+     - Requires attack prediction based on observations
+   - **Reaction Block Reward** (+0.2 per reactive block):
+     - Reward for blocking during opponent's windup
+     - Less than anticipation but still good
+   - **Block Efficiency Reward** (+0.1 per frame blocking only when needed):
+     - Penalize constant blocking (-0.05 per frame blocking with no threat)
+     - Encourages smart blocking, not turtling
+
+3. **Add evasion rewards**:
+   - **Successful Evasion Reward** (+0.8 per evaded attack):
+     - Reward if opponent attack misses due to evasion
+     - Detect by comparing attack trajectory to actual position
+   - **Evasion Timing Reward** (+0.2 per well-timed evasion):
+     - Reward for evading at last moment (high risk, high reward)
+     - Measure timing relative to attack active frames
+
+4. **Add positioning rewards**:
+   - **Safe Distance Reward** (+0.05 per frame at safe range):
+     - Reward for maintaining defensive spacing when threatened
+     - Safe range: outside opponent's optimal attack range
+   - **Escape Route Reward** (+0.02 per frame with escape available):
+     - Reward for keeping options open (not cornered)
+   - **Defensive Footwork Reward** (+0.1 per effective circle):
+     - Reward for using footwork to maintain safe distance
+
+5. **Add strategic defense rewards**:
+   - **Defensive Counter Reward** (+1.5 per counter-attack after block):
+     - Large reward for attacking immediately after successful block
+     - Teaches block-then-counter strategy
+   - **Stamina Management Reward** (+0.1 per frame with >50% block stamina):
+     - Reward for maintaining stamina reserves
+     - Encourages not over-blocking
+   - **Adaptive Defense Reward** (+0.3 per guard height change matching opponent):
+     - Reward for adjusting guard based on opponent's attack patterns
+     - Requires pattern recognition
+
+6. **Add combat balance rewards**:
+   - **Balanced Aggression Reward** (+0.2 per exchange):
+     - Reward for mixing offense and defense
+     - Penalize pure turtling (-0.1 per extended defensive period)
+     - Penalize pure aggression without defense
+   - **Damage Ratio Reward** (+1.0 if damage dealt > damage taken):
+     - Reward for winning damage trades
+     - Encourages effective combat overall
+
+7. **Add sparse milestone rewards**:
+   - **Defensive Masterclass** (+5.0): Win round taking <20% damage
+   - **Rope-a-Dope** (+3.0): Block 10+ attacks in a round
+   - **Counterpuncher** (+4.0): Land 3+ counter-attacks after blocks
+
+8. **Penalties for poor defense**:
+   - **Failed Block Penalty** (-0.3 per hit while blocking incorrectly):
+     - Penalize blocking with wrong guard height
+   - **Over-Blocking Penalty** (-0.05 per frame blocking unnecessarily):
+     - Prevent passive turtling strategy
+   - **Cornered Penalty** (-0.1 per frame cornered):
+     - Penalize poor positioning
+
+9. **Update reward weight balance**:
+   - Combat effectiveness: 0.35 (decreased, defense now part of combat)
+   - Physical realism: 0.25
+   - Strategic depth: 0.25 (increased, defense is strategic)
+   - Player entertainment: 0.15
+
+10. **Add defensive reward debugging**:
+    - Log block success rate
+    - Track evasion effectiveness
+    - Monitor defensive vs offensive time ratio
+    - Visualize defensive rewards separately
 
 **Verification Checklist:**
-- [ ] Special moves execute as attacks
-- [ ] Damage and knockback multipliers applied
-- [ ] Special knockdown triggered on hit
-- [ ] Special move animations play correctly
-- [ ] Hit data includes special move flag
+- [ ] Block rewards trigger on successful blocks
+- [ ] Guard height matching rewarded
+- [ ] Evasion rewards for dodged attacks
+- [ ] Positioning rewards for safe spacing
+- [ ] Counter-attack rewards fire after blocks
+- [ ] Over-blocking penalties prevent turtling
+- [ ] Reward balance encourages mixed offense/defense
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Characters/CharacterCombatTests.cs`
-
-Test cases:
-- ExecuteSpecialMove triggers attack with enhanced damage
-- Special move knockback stronger than base attack
-- Special move triggers SpecialKnockdownState
-- Hit data flagged as special move
+- Manual Heuristic testing:
+  - Block attacks and observe rewards
+  - Match guard height and check perfect block bonus
+  - Evade attacks and verify evasion rewards
+  - Counter-attack after block, check bonus
+  - Turtle (block constantly) and verify penalties
+- Ensure defensive rewards don't dominate offensive play
 
 **Commit Message Template:**
 ```
-feat(special): integrate special moves with combat system
+feat(rewards): implement defensive and mitigation reward function
 
-- Add ExecuteSpecialMove method to CharacterCombat
-- Apply damage and knockback multipliers
-- Trigger special knockdown on hit
-- Flag hits as special moves in hit data
+- Added damage mitigation rewards (blocks, perfect blocks, damage prevented)
+- Added defensive timing rewards (anticipation, reaction, efficiency)
+- Added evasion rewards (successful evasion, timing)
+- Added positioning rewards (safe distance, escape routes, footwork)
+- Added strategic defense rewards (counters, stamina management, adaptive guard)
+- Added combat balance rewards (mixed aggression, damage ratio)
+- Added sparse milestone rewards (defensive masterclass, rope-a-dope)
+- Added penalties for poor defense (failed blocks, over-blocking, cornered)
+- Updated reward weights to emphasize strategic depth
+- Implemented defensive reward debugging and logging
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~7,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Create Character Signature Special Moves
+## Task 5: Create Defensive Training Configuration
 
-**Goal:** Design and create example special moves for base character.
+**Goal:** Configure ML-Agents training for defensive behavior learning.
 
-**Files to Create:**
-- `Assets/Knockout/Data/SpecialMoves/BaseCharacter_Haymaker.asset` - Powerful hook variant
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Config/defense_training.yaml` (new)
 
 **Prerequisites:**
-- Task 1 complete (SpecialMoveData exists)
+- Task 4 completed (defensive rewards implemented)
 
 **Implementation Steps:**
 
-1. Create "Haymaker" special move:
-   - Name: "Haymaker"
-   - Base Attack: Right_hook AttackData
-   - Damage Multiplier: 2.0x
-   - Knockback Multiplier: 2.5x
-   - Cooldown: 45 seconds
-   - Stamina Cost: 40
-   - Triggers Special Knockdown: true
-   - Special Knockdown Duration: 3.0 seconds
-   - Animation Trigger: "Haymaker" (or reuse "Hook")
-2. Save in `Assets/Knockout/Data/SpecialMoves/`
-3. (Optional) Create additional variants for other characters later
+1. **Create defense_training.yaml** based on balance_training.yaml
 
-**Design Guidance:**
-- Haymaker is classic powerful punch special
-- High risk (high stamina cost, long cooldown) high reward (big damage)
-- Balanced: strong but not one-shot kill (2x damage vs 100 health = 20 damage on base 10dmg attack)
-- Future characters will have unique special moves (Liver Shot, Cross Counter, etc.)
+2. **Update hyperparameters**:
+   - `batch_size: 4096`
+   - `buffer_size: 40960`
+   - `learning_rate: 1.5e-4` (slightly lower for stable defensive learning)
+   - `beta: 5e-3` (moderate exploration)
+   - `max_steps: 6000000`
+
+3. **Network architecture**:
+   - `hidden_units: 512` (increased for complex decision making)
+   - `num_layers: 3`
+
+4. **Configure transfer learning** from Phase 3:
+   - Use `--initialize-from=balance_phase3`
+
+5. **Self-play settings**:
+   - `save_steps: 100000`
+   - `play_against_latest_model_ratio: 0.7` (face strong opponents to learn defense)
+
+6. **Optional: Asymmetric self-play**:
+   - Configure one agent to be more aggressive (attack-focused)
+   - Other agent learns to defend against aggression
+   - Use ML-Agents team settings if implementing
 
 **Verification Checklist:**
-- [ ] Asset created successfully
-- [ ] Values balanced (not overpowered)
-- [ ] Base attack reference set
-- [ ] Asset assignable to CharacterSpecialMoves
+- [ ] defense_training.yaml valid syntax
+- [ ] Transfer learning configured
+- [ ] Network expanded for decision complexity
+- [ ] Hyperparameters tuned for defensive learning
 
 **Testing Instructions:**
-
-Manual testing:
-- Assign Haymaker to character
-- Execute special move in play mode
-- Verify enhanced damage and knockdown
+- Validate config before training
 
 **Commit Message Template:**
 ```
-feat(special): add Haymaker special move for base character
+feat(training): create defensive training configuration
 
-- Create powerful hook variant
-- 2x damage, 2.5x knockback
-- 45s cooldown, 40 stamina cost
-- Triggers special knockdown
+- Created defense_training.yaml based on balance config
+- Configured transfer learning from Phase 3 model
+- Expanded network to 512 hidden units for complex decisions
+- Set max steps to 6M for defensive behavior learning
+- Configured self-play to emphasize challenging opponents
+- Tuned hyperparameters for defensive stability
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~7,000
 
 ---
 
-### Task 6: Update Character Prefab with Special Moves
+## Task 6: Train Defensive Agent and Evaluate
 
-**Goal:** Add special move system to character prefab.
+**Goal:** Execute training and evaluate defensive capabilities.
 
-**Files to Modify:**
-- `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` - Add component
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Models/defense_phase4.onnx`
+- `docs/TRAINING_LOG.md` (update)
 
 **Prerequisites:**
-- Task 3 complete (CharacterSpecialMoves exists)
-- Task 5 complete (Haymaker asset exists)
+- Tasks 1-5 completed
+- Phase 3 model available
 
 **Implementation Steps:**
 
-1. Open BaseCharacter prefab
-2. Add `CharacterSpecialMoves` component
-3. Assign dependencies:
-   - Character Controller
-   - Character Input
-   - Character Stamina
-   - Character Combat
-4. Assign SpecialMoveData: Haymaker
-5. Verify component initialization
-6. Test in play mode
+1. **Start training**:
+   ```bash
+   mlagents-learn Assets/Knockout/Training/Config/defense_training.yaml --run-id=defense_phase4 --initialize-from=balance_phase3 --time-scale=20
+   ```
 
-**Design Guidance:**
-- Each character will have different special move assigned
-- Component setup follows existing pattern
+2. **Monitor defensive metrics**:
+   - Block success rate (should increase)
+   - Damage taken per episode (should decrease)
+   - Time spent blocking (should stabilize, not constant)
+   - Counter-attack rate (should increase)
+
+3. **Training duration**: 4-6M steps (~3-5 hours)
+
+4. **Evaluate trained model**:
+   - Quantitative:
+     - Block success rate (target >40%)
+     - Damage reduction via blocking (target >30%)
+     - Damage taken compared to Phase 3 (should be lower)
+     - Counter-attack frequency
+   - Qualitative:
+     - [ ] Agents block incoming attacks
+     - [ ] Guard height adjusts to attack type
+     - [ ] Blocks timed appropriately (not constant)
+     - [ ] Evasion used to slip punches
+     - [ ] Defensive footwork maintains safe distance
+     - [ ] Counter-attacks after successful blocks
+     - [ ] Mix of offense and defense (not pure turtling)
+     - [ ] Previous skills maintained (movement, attacks, balance)
+
+5. **Compare to Phase 3**:
+   - Should take significantly less damage
+   - Fights should last longer (both agents defending)
+   - More tactical, less brawling
+
+6. **Export model** as `defense_phase4.onnx`
+
+7. **Document results** in `docs/TRAINING_LOG.md`
+
+8. **Troubleshooting**:
+   - **Agents turtle constantly**: Increase over-blocking penalties, increase offensive rewards
+   - **Agents don't block**: Increase block rewards, ensure observations detect attacks
+   - **Guard height wrong**: Increase perfect block bonus, ensure height matching implemented
+   - **Skills degraded**: Use transfer learning, verify network expansion compatible
 
 **Verification Checklist:**
-- [ ] Component added to prefab
-- [ ] Dependencies assigned
-- [ ] Special move assigned
-- [ ] Component initializes without errors
-- [ ] Special move functional in play mode
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Build stamina and wait for cooldown
-- Execute special move
-- Verify damage, knockdown, cooldown
+- [ ] Training completes successfully
+- [ ] Block success rate improved
+- [ ] Damage taken decreased
+- [ ] Defensive timing appropriate
+- [ ] Mix of offense and defense observed
+- [ ] Previous skills maintained
+- [ ] Model exported and tested
 
 **Commit Message Template:**
 ```
-feat(special): add special move system to character prefab
+feat(training): train defensive agent with blocking and evasion
 
-- Add CharacterSpecialMoves component
-- Assign Haymaker special move
-- Integrate into component initialization
+- Trained for 5M steps with transfer learning from Phase 3
+- Block success rate improved to 45%
+- Damage taken reduced by 35% compared to Phase 3
+- Agents demonstrate guard height adaptation
+- Counter-attacking after blocks observed frequently
+- Balanced offense/defense maintained (not turtling)
+- All previous skills (movement, attacks, balance) retained
+- Exported defense_phase4.onnx model
+- Documented training in TRAINING_LOG.md
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 7: Create ScoringWeights ScriptableObject
-
-**Goal:** Define configurable weights for judge scoring metrics.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/ScoringWeights.cs` - ScriptableObject class
-
-**Prerequisites:**
-- Understand DD-005 (Judge Scoring Design)
-
-**Implementation Steps:**
-
-1. Create `ScoringWeights` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Scoring Weights"` (order = 9)
-3. Define scoring weight fields (all floats):
-   - **Offensive Weights:**
-     - `cleanHitPoints` - Points for landing clean hit
-     - `comboHitBonus` - Bonus per hit in combo (additive)
-     - `comboSequencePoints` - Points for completing predefined sequence
-     - `specialMovePoints` - Points for landing special move
-     - `knockdownPoints` - Points for knockdown
-     - `damageDealtWeight` - Multiplier for total damage dealt
-   - **Defensive Weights:**
-     - `blockPoints` - Points per successful block
-     - `parryPoints` - Points per successful parry
-     - `dodgePoints` - Points per successful dodge (avoided hit)
-   - **Control Weights:**
-     - `aggressionPointsPerSecond` - Points for time spent in offensive range
-     - `ringControlBonus` - Bonus for controlling center (optional, can be 0)
-   - **Penalties:**
-     - `exhaustionPenalty` - Points lost per exhaustion occurrence
-     - `missedAttackPenalty` - Small penalty for whiffed attacks (optional)
-4. Expose public read-only properties
-5. Implement `OnValidate()` to clamp values to reasonable ranges
-6. Add XML documentation explaining each metric
-
-**Design Guidance:**
-- Default values from DD-005:
-  - Clean hit: 1 point
-  - Combo sequence: 5 points
-  - Special move: 8 points
-  - Knockdown: 10 points
-  - Parry: 2 points
-  - Aggression: 0.1 points/sec
-- Weights allow balancing (e.g., emphasize aggression vs technical defense)
-- Positive weights only (penalties are separate)
-
-**Verification Checklist:**
-- [ ] ScriptableObject created successfully
-- [ ] All metrics have configurable weights
-- [ ] OnValidate clamps to valid ranges
-- [ ] Documentation explains each metric
-
-**Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Scoring/ScoringWeightsTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate clamps negative values
-- Default values match design spec
-
-**Commit Message Template:**
-```
-feat(scoring): add ScoringWeights ScriptableObject
-
-- Define configurable weights for all scoring metrics
-- Support offensive, defensive, and control scoring
-- Allow balance tuning via data
-```
-
-**Estimated Tokens:** ~4,000
-
----
-
-### Task 8: Create CharacterScoring Component
-
-**Goal:** Track all combat actions and calculate accumulated score for judge decision.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterScoring.cs` - Component class
-
-**Prerequisites:**
-- Task 7 complete (ScoringWeights exists)
-- All previous phases (events from combat, combos, defense)
-
-**Implementation Steps:**
-
-1. Create `CharacterScoring` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern:
-   - Dependencies: `CharacterController`, `ScoringWeights`, all action components (Combat, Combo, Dodge, Parry, Stamina, SpecialMoves)
-   - Subscribe to ALL relevant events in `Initialize()`:
-     - CharacterCombat: OnHitLanded, OnAttackBlocked, OnHitTaken
-     - CharacterComboTracker: OnComboSequenceCompleted
-     - CharacterDodge: OnDodgeStarted (if hit avoided)
-     - CharacterParry: OnParrySuccess
-     - CharacterStamina: OnStaminaDepleted
-     - CharacterSpecialMoves: OnSpecialMoveUsed
-3. Track comprehensive statistics:
-   - Clean hits landed (int)
-   - Total damage dealt (float)
-   - Combos completed (int)
-   - Predefined sequences landed (int)
-   - Special moves landed (int)
-   - Knockdowns inflicted (int)
-   - Blocks successful (int)
-   - Parries successful (int)
-   - Dodges successful (int)
-   - Aggression time accumulated (float, seconds)
-   - Exhaustion count (int)
-4. Calculate total score:
-   - Method: `CalculateTotalScore()` → float
-   - Apply weights from ScoringWeights to each statistic
-   - Return accumulated score
-5. Track aggression time:
-   - In `Update()`: check if character in offensive range (query distance to opponent)
-   - If yes: accumulate aggression time
-   - Offensive range: < 3 units from opponent (configurable)
-6. Expose properties: `TotalScore`, `CleanHitsLanded`, etc. (all stats)
-7. Add method `ResetScore()` to clear stats (called between rounds)
-8. Fire event: `OnScoreChanged(float newScore)` whenever score updates
-
-**Design Guidance:**
-- Scoring is cumulative throughout round
-- Score updates in real-time (for UI display)
-- Aggression time rewards offensive pressure
-- All stats tracked independently, then weighted for final score
-
-**Verification Checklist:**
-- [ ] Component initializes correctly
-- [ ] All combat actions tracked
-- [ ] Statistics increment correctly
-- [ ] Total score calculation accurate
-- [ ] Aggression time tracked
-- [ ] Events fire correctly
-
-**Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Scoring/CharacterScoringTests.cs`
-
-Test cases:
-- Landing hit increments clean hits and updates score
-- Completing combo sequence adds sequence points
-- Successful parry adds parry points
-- Special move landed adds special move points
-- Exhaustion increments exhaustion count
-- CalculateTotalScore applies weights correctly
-- ResetScore clears all statistics
-
-**Commit Message Template:**
-```
-feat(scoring): implement CharacterScoring component
-
-- Track all combat actions comprehensively
-- Calculate weighted score from statistics
-- Track aggression time for momentum scoring
-- Fire score update events for UI
-```
-
-**Estimated Tokens:** ~12,000
-
----
-
-### Task 9: Integrate Scoring with RoundManager
-
-**Goal:** Use scoring system to determine round winner when time expires.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Systems/RoundManager.cs` - Add judge decision logic
-
-**Prerequisites:**
-- Task 8 complete (CharacterScoring exists)
-- Understand RoundManager round flow
-
-**Implementation Steps:**
-
-1. In RoundManager:
-   - Get references to both CharacterScoring components (player and opponent)
-   - Subscribe to round timer expiry event
-2. Implement judge decision logic:
-   - Method: `DetermineJudgeWinner()` → Character (or null for draw)
-   - When round timer expires without knockout:
-     - Query both characters' `TotalScore`
-     - Compare scores
-     - Higher score wins round
-     - Equal scores: draw (or sudden death, configurable)
-   - Award round to winner via existing round win logic
-3. Add configuration:
-   - Field: `allowDraws` (bool, default false)
-   - If draw and draws not allowed: continue round (sudden death) or tie-breaker rule
-4. Display judge decision:
-   - Fire event: `OnJudgeDecision(Character winner, float score1, float score2)`
-   - UI will display decision (Phase 5)
-5. Reset scores at round start
-
-**Design Guidance:**
-- Judge decision only happens on timer expiry
-- Knockout still primary win condition (scoring is fallback)
-- Scoring differential represents momentum advantage
-- Clear feedback to players on who won and why
-
-**Verification Checklist:**
-- [ ] Judge decision logic functional
-- [ ] Round awarded to higher score on timer expiry
-- [ ] Draw handling implemented
-- [ ] Scores reset between rounds
-- [ ] Events fire correctly
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Systems/RoundManagerTests.cs`
-
-Test cases:
-- Timer expiry triggers judge decision
-- Higher score wins round
-- Equal scores handled (draw or tie-breaker)
-- Scores reset on new round start
-- OnJudgeDecision event fires with correct data
-
-**Commit Message Template:**
-```
-feat(scoring): integrate judge decision with RoundManager
-
-- Determine round winner by score on timer expiry
-- Award round to higher scoring character
-- Handle draws and tie-breakers
-- Reset scores between rounds
-```
-
-**Estimated Tokens:** ~7,000
-
----
-
-### Task 10: Add Round Timer to RoundManager
-
-**Goal:** Implement round timer that expires and triggers judge decision.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Systems/RoundManager.cs` - Add timer logic
-
-**Prerequisites:**
-- Understand RoundManager state machine
-
-**Implementation Steps:**
-
-1. Add timer configuration:
-   - Field: `roundDuration` (float, seconds, default 180s = 3 minutes)
-   - Field: `enableRoundTimer` (bool, default true, allows disabling for practice)
-2. Track timer state:
-   - Current round time remaining (float)
-   - Property: `RoundTimeRemaining` (for UI)
-   - Property: `RoundProgress` (0-1, for UI timer bar)
-3. Implement timer countdown:
-   - In `Update()` during Fighting state:
-     - Decrement time remaining
-     - Fire `OnRoundTimeChanged(float timeRemaining)` event (for UI)
-     - When time reaches 0: trigger judge decision
-4. Reset timer on round start
-5. Pause timer during round end/countdown states
-
-**Design Guidance:**
-- Standard round duration: 3 minutes (180 seconds)
-- Timer only counts during active fighting (not countdown, not round end)
-- Timer expiry triggers judge decision (previous task)
-- UI will display timer (Phase 5)
-
-**Verification Checklist:**
-- [ ] Timer counts down during round
-- [ ] Timer resets on new round
-- [ ] Timer expiry triggers judge decision
-- [ ] Timer pauses during non-fighting states
-- [ ] Events fire for UI updates
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Systems/RoundManagerTests.cs`
-
-Test cases:
-- Timer counts down from round duration
-- Timer reaches 0 and triggers judge decision
-- Timer resets on new round start
-- Timer pauses during countdown state
-- OnRoundTimeChanged events fire
-
-**Commit Message Template:**
-```
-feat(scoring): add round timer to RoundManager
-
-- Implement configurable round duration timer
-- Count down during active fighting
-- Trigger judge decision on expiry
-- Fire events for UI timer display
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 11: Create Default ScoringWeights Asset
-
-**Goal:** Create default scoring configuration with balanced weights.
-
-**Files to Create:**
-- `Assets/Knockout/Data/Scoring/DefaultScoringWeights.asset` - ScoringWeights instance
-
-**Prerequisites:**
-- Task 7 complete (ScoringWeights exists)
-
-**Implementation Steps:**
-
-1. Create DefaultScoringWeights asset
-2. Configure with balanced default values from DD-005:
-   - Clean Hit: 1
-   - Combo Hit Bonus: 0.5 (per hit)
-   - Combo Sequence: 5
-   - Special Move: 8
-   - Knockdown: 10
-   - Damage Dealt Weight: 0.1 (1 damage = 0.1 points)
-   - Block: 0.5
-   - Parry: 2
-   - Dodge: 1
-   - Aggression: 0.1 points/sec
-   - Exhaustion Penalty: -3
-3. Save in `Assets/Knockout/Data/Scoring/`
-
-**Design Guidance:**
-- Values emphasize offensive aggression (landing hits) over pure defense
-- Parries worth more than blocks (skill-based)
-- Special moves and knockdowns highest value (rare, impactful)
-- These can be tuned based on playtesting
-
-**Verification Checklist:**
-- [ ] Asset created successfully
-- [ ] Values balanced and match design
-- [ ] Asset assignable to CharacterScoring
-
-**Testing Instructions:**
-
-Manual verification:
-- Asset loads without errors
-- Values reasonable (no extreme outliers)
-
-**Commit Message Template:**
-```
-feat(scoring): add default scoring weights asset
-
-- Configure balanced default weights
-- Emphasize offensive aggression
-- Reward skill-based defense (parry > block)
-```
-
-**Estimated Tokens:** ~2,000
-
----
-
-### Task 12: Update Character Prefab with Scoring
-
-**Goal:** Add scoring component to character prefab.
-
-**Files to Modify:**
-- `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` - Add component
-
-**Prerequisites:**
-- Task 8 complete (CharacterScoring exists)
-- Task 11 complete (DefaultScoringWeights exists)
-
-**Implementation Steps:**
-
-1. Open BaseCharacter prefab
-2. Add `CharacterScoring` component
-3. Assign dependencies (auto-find where possible):
-   - Character Controller
-   - All action components (Combat, Combo, Dodge, Parry, Stamina, SpecialMoves)
-4. Assign ScoringWeights: DefaultScoringWeights
-5. Configure aggression range: 3 units
-6. Verify initialization
-7. Test in play mode
-
-**Design Guidance:**
-- Scoring component subscribes to all other components' events
-- Initialize last (after all other components ready)
-
-**Verification Checklist:**
-- [ ] Component added to prefab
-- [ ] Dependencies assigned
-- [ ] Scoring weights assigned
-- [ ] Component initializes without errors
-- [ ] Score tracking functional in play mode
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Perform various actions (attack, block, parry, combo)
-- Verify score increases
-- Check score calculation accurate
-
-**Commit Message Template:**
-```
-feat(scoring): add scoring component to character prefab
-
-- Add CharacterScoring component
-- Assign default scoring weights
-- Integrate into component initialization
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 13: Implement Momentum Tracking
-
-**Goal:** Visualize momentum advantage via scoring differential (optional enhancement).
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Systems/MomentumTracker.cs` - Utility component (optional)
-
-**Prerequisites:**
-- Task 8 complete (CharacterScoring exists)
-
-**Implementation Steps:**
-
-1. Create `MomentumTracker` utility (optional, can be integrated into RoundManager)
-2. Track scoring differential:
-   - Query both characters' scores
-   - Calculate momentum: `(player.score - opponent.score) / maxScore`
-   - Momentum range: [-1, 1] (negative = opponent advantage, positive = player advantage)
-3. Expose property: `MomentumValue` (float, -1 to 1)
-4. Fire event: `OnMomentumChanged(float momentum)` for UI
-5. Momentum represents "who's winning" in current round
-
-**Design Guidance:**
-- Momentum is derived from scoring, not separate resource
-- Purely informational (doesn't affect gameplay mechanics)
-- UI can display momentum bar (Phase 5)
-- Reflects DD-006 (momentum-based combat philosophy)
-
-**Verification Checklist:**
-- [ ] Momentum calculated correctly from score differential
-- [ ] Momentum range clamped to [-1, 1]
-- [ ] Events fire for UI updates
-- [ ] Momentum resets each round
-
-**Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Systems/MomentumTrackerTests.cs` (if implemented)
-
-Test cases:
-- Momentum positive when player scoring more
-- Momentum negative when opponent scoring more
-- Momentum zero when scores equal
-- Momentum resets on new round
-
-**Commit Message Template:**
-```
-feat(scoring): add momentum tracking system
-
-- Calculate momentum from scoring differential
-- Expose momentum value for UI display
-- Reflect momentum-based combat philosophy
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 14: Comprehensive Integration Testing
-
-**Goal:** Verify special moves and scoring systems work correctly in all scenarios.
-
-**Files to Create:**
-- `Assets/Knockout/Tests/PlayMode/Integration/SpecialMovesIntegrationTests.cs`
-- `Assets/Knockout/Tests/PlayMode/Integration/ScoringIntegrationTests.cs`
-
-**Prerequisites:**
-- All previous tasks complete
-
-**Implementation Steps:**
-
-1. Create special moves integration tests:
-   - Test: Special move execution with cooldown + stamina gating
-   - Test: Special move triggers special knockdown
-   - Test: Special move damage and knockback multipliers
-   - Test: Cooldown prevents spam
-   - Test: Insufficient stamina blocks special move
-   - Test: Special move during invalid state fails
-2. Create scoring integration tests:
-   - Test: All combat actions tracked and scored
-   - Test: Score calculation accurate with weights
-   - Test: Judge decision on timer expiry
-   - Test: Higher score wins round
-   - Test: Scores reset between rounds
-   - Test: Momentum tracks correctly (if implemented)
-   - Test: Comprehensive round scenario (attacks, blocks, parries, combos, specials)
-3. Test edge cases:
-   - Special move with exactly enough stamina
-   - Timer expiry during attack animation
-   - Equal scores (draw handling)
-   - Score overflow (very long round)
-   - Knockdown during special move animation
-
-**Design Guidance:**
-- Test realistic combat flows
-- Verify scoring accuracy (manual calculation vs component)
-- Check event firing order
-
-**Verification Checklist:**
-- [ ] All integration tests pass
-- [ ] Special moves functional in gameplay
-- [ ] Scoring accurate and reliable
-- [ ] Judge decisions correct
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps)
-
-**Testing Instructions:**
-
-Run all tests:
-- EditMode tests (special moves, scoring)
-- PlayMode tests (all Phase 4 tests)
-- Integration tests
-- Verify all green
-
-**Commit Message Template:**
-```
-test(special,scoring): add comprehensive integration tests
-
-- Test special move execution and gating
-- Test comprehensive scoring tracking
-- Test judge decision logic
-- Cover edge cases and timing scenarios
-```
-
-**Estimated Tokens:** ~10,000
-
----
-
-### Task 15: Documentation and Code Cleanup
-
-**Goal:** Document special moves and scoring systems, clean up code, finalize Phase 4.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/SPECIAL_MOVES_SYSTEM.md`
-- `Assets/Knockout/Scripts/Characters/Components/SCORING_SYSTEM.md`
-
-**Files to Modify:**
-- All Phase 4 scripts - Remove debug logs, finalize comments
-
-**Prerequisites:**
-- All previous tasks complete
-- All tests passing
-
-**Implementation Steps:**
-
-1. Create SPECIAL_MOVES_SYSTEM.md:
-   - Overview of special move mechanics
-   - How to create character signature moves
-   - Cooldown and stamina gating explanation
-   - Special knockdown configuration
-   - Balancing tips (damage, cooldown, cost)
-   - Troubleshooting
-2. Create SCORING_SYSTEM.md:
-   - Overview of comprehensive scoring
-   - Explanation of all scoring metrics
-   - How to configure scoring weights
-   - Judge decision logic
-   - Momentum-based philosophy
-   - Balancing tips (weights tuning)
-   - Troubleshooting
-3. Review all scripts:
-   - Remove debug logs
-   - Finalize XML comments
-   - Verify naming conventions
-4. Update main documentation
-
-**Design Guidance:**
-- Documentation helps designers create balanced special moves
-- Explain scoring philosophy for weight tuning
-- Provide examples of common configurations
-
-**Verification Checklist:**
-- [ ] SPECIAL_MOVES_SYSTEM.md comprehensive
-- [ ] SCORING_SYSTEM.md comprehensive
-- [ ] All debug logs removed
-- [ ] XML comments complete
-- [ ] No compiler warnings
-
-**Testing Instructions:**
-
-Final checks:
-- Build project
-- Run all tests
-- Code review
-
-**Commit Message Template:**
-```
-docs(special,scoring): add system documentation
-
-- Create SPECIAL_MOVES_SYSTEM.md guide
-- Create SCORING_SYSTEM.md guide
-- Explain balancing and configuration
-- Remove debug logging and finalize code
-```
-
-**Estimated Tokens:** ~6,000
+**Estimated tokens:** ~10,000
 
 ---
 
 ## Phase 4 Verification
 
-**Completion Checklist:**
-- [ ] All 15 tasks completed
-- [ ] All tests passing (EditMode + PlayMode)
-- [ ] Special move system functional (cooldown + stamina gating)
-- [ ] Special knockdown triggered by special moves
-- [ ] Comprehensive scoring tracking all actions
-- [ ] Judge decision logic working correctly
-- [ ] Round timer functional
-- [ ] Character prefab updated with special moves and scoring
-- [ ] Default configurations created
-- [ ] Documentation complete
-- [ ] Code reviewed and cleaned
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps, Profiler shows CharacterSpecialMoves and CharacterScoring < 0.1ms per frame each, no GC allocations)
+Complete before proceeding to Phase 5:
 
-**Integration Points for Next Phase:**
-- Special move events available for UI (cooldown indicator - Phase 5)
-- Scoring events available for UI (score display, momentum bar - Phase 5)
-- Round timer available for UI (timer display - Phase 5)
-- Judge decision events for UI (round winner announcement - Phase 5)
+### Observations
+- [ ] Defensive observations added (~17 new)
+- [ ] Total observation space ~104 dimensions
+- [ ] Attack prediction working
+- [ ] Blocking state tracked
+- [ ] Positioning safety calculated
 
-**Known Limitations:**
-- Special move and scoring UI not implemented (Phase 5)
-- AI doesn't use special moves strategically (post-Phase 5)
-- No special move variety (one per character, can expand later)
-- Scoring weights not playtested (requires Phase 5 UI for tuning)
+### Actions
+- [ ] Defensive actions added (total 23 actions)
+- [ ] Block activation functional
+- [ ] Guard height adjustable
+- [ ] Evasion and defensive footwork working
+
+### Physics Controllers
+- [ ] DefenseController implemented
+- [ ] Blocking stance physics correct
+- [ ] Damage mitigation functional
+- [ ] Evasion lean natural-looking
+- [ ] Defensive footwork maintains distance
+- [ ] Block stamina system working (if implemented)
+
+### Reward Function
+- [ ] Damage mitigation rewards
+- [ ] Defensive timing rewards
+- [ ] Evasion rewards
+- [ ] Positioning rewards
+- [ ] Strategic defense rewards
+- [ ] Over-blocking penalties prevent turtling
+
+### Training Results
+- [ ] Training completed for at least 4M steps
+- [ ] Block success rate >35%
+- [ ] Damage taken reduced from Phase 3
+- [ ] Defensive behaviors demonstrated
+- [ ] Balanced offense/defense
+- [ ] Previous skills maintained
+- [ ] Model exported as defense_phase4.onnx
+
+### Known Limitations
+- Block timing may not be perfect (human-level blocking difficult)
+- Agents may over-rely on blocking vs evasion (tuning needed)
+- Defensive footwork may be cautious (can adjust aggression in Phase 5)
 
 ---
 
-## Next Phase
+## Next Steps
 
-After Phase 4 completion and verification, proceed to:
-
-**[Phase 5: UI Systems & Training Mode](Phase-5.md)**
-
-Implement contextual UI for all new systems and basic training/practice mode.
+After Phase 4 completion:
+- **[Phase 5: Arbiter Integration & Polish](Phase-5.md)** - Integrate all systems with behavioral AI, add arbiter, polish and optimize
+- Ensure defense_phase4.onnx saved before proceeding

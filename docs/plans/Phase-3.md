@@ -1,974 +1,678 @@
-# Phase 3: Combo System
+# Phase 3: Hit Reactions & Balance Recovery
 
 ## Phase Goal
 
-Implement the hybrid combo system featuring natural attack chaining with variable timing windows and predefined combo sequences with special bonuses. Combos use heavy damage scaling and can be interrupted by blocking or hitting the attacker.
+Implement physics-based hit reactions, balance control, and recovery systems. The agent will learn to respond realistically to incoming hits, stumble authentically based on force and location, maintain balance through center-of-mass control, and recover gracefully to continue fighting. This creates dramatic, physically believable combat exchanges.
 
 **Success Criteria:**
-- Natural combo chains between any attacks with variable timing windows (Jab chains easy, Uppercut requires precision)
-- Predefined combo sequences grant damage bonuses and special effects
-- Heavy damage scaling (2nd hit 75%, 3rd hit 50%)
-- Combo interruption via blocking or hit/stagger (small windows)
-- Character-specific combo sequences configurable via ScriptableObjects
-- Combo tracking and events for UI integration
-- 85%+ test coverage
+- Hit reaction observations track balance state and impact forces
+- Balance recovery actions allow agent to regain stability
+- Physics controllers simulate stumbling, reeling, and knockdowns
+- Reward function encourages maintaining balance and quick recovery
+- Agent trains to recover from hits and continue fighting
+- Trained agent exhibits realistic hit reactions and balance behavior
 
-**Estimated Tokens:** ~100,000
-
----
+**Estimated tokens:** ~90,000
 
 ## Prerequisites
 
-**Required Reading:**
-- [Phase 0: Foundation](Phase-0.md) - Architecture and combo design (DD-002)
-- [Phase 1: Core Resource Systems](Phase-1.md) - Attack execution flow
-- [Phase 2: Advanced Defense](Phase-2.md) - Block timing for combo breaking
-
-**Existing Systems to Understand:**
-- `CharacterCombat` - Attack execution (Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs)
-- `AttackData` - Attack properties (Assets/Knockout/Scripts/Characters/Data/AttackData.cs)
-- `CombatStateMachine` - Attack state transitions
-- `BlockingState` - Block timing for interruption
-
-**Environment:**
-- Unity 2021.3.8f1 LTS
-- Frame-based timing at 60fps
+- Phase 0 completed (architecture foundation)
+- Phase 1 completed (movement trained)
+- Phase 2 completed (attack execution trained)
+- `attack_phase2.onnx` model available
+- Understanding of character balance and physics
 
 ---
 
-## Tasks
+## Task 1: Add Balance and Hit Reaction Observations
 
-### Task 1: Create ComboSequenceData ScriptableObject
+**Goal:** Provide agent with information about balance state, incoming forces, and recovery status.
 
-**Goal:** Define predefined combo sequence configuration with attack chains and bonuses.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/ComboSequenceData.cs` - ScriptableObject class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (modify)
 
 **Prerequisites:**
-- Review `AttackData.cs` for ScriptableObject pattern
-- Understand DD-002 (Combo System Design)
+- Phase 2 observations working (69 dimensions currently)
 
 **Implementation Steps:**
 
-1. Create `ComboSequenceData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Combo Sequence Data"` (order = 6)
-3. Define combo sequence structure:
-   - Sequence name (string)
-   - Required attack sequence (int array of attack type indices: 0=Jab, 1=Hook, 2=Uppercut)
-   - Timing window frames (int, how tight the sequence timing is)
-   - Damage bonus multiplier (float, applied AFTER damage scaling)
-   - Special properties (optional: enhanced knockback, guaranteed stagger, etc.)
-   - Visual/audio identifiers (optional: VFX prefab, sound clip)
-4. Expose public read-only properties
-5. Implement `OnValidate()`:
-   - Ensure sequence has at least 2 attacks
-   - Clamp damage bonus to reasonable range (1.0-3.0x)
-   - Validate timing window > 0
-6. Add helper properties: `SequenceLength`, `TimingWindowSeconds`
-7. Add XML documentation and tooltips
+1. **Add balance state observations** (~8 observations):
+   - Center of mass offset from support base (2D x,z normalized)
+   - Balance stability metric (0-1, how close to tipping)
+   - Current tilt angle from vertical (normalized)
+   - Angular velocity around balance point (normalized)
+   - Ground contact status per foot (2 booleans)
+   - Is currently stumbling/staggering (boolean)
+   - Time since last hit received (normalized, capped at 5 seconds)
 
-**Design Guidance:**
-- Example sequence: Jab-Jab-Hook = [0, 0, 1] with 1.5x damage bonus
-- Timing window can be tighter than natural chain window (predefined sequences require precision)
-- Bonus multiplier applies to final hit only (optional: apply to all hits in sequence)
-- Keep sequences short (2-4 hits) for accessibility
+2. **Add hit impact observations** (~6 observations):
+   - Last hit impact force magnitude (normalized)
+   - Last hit direction (2D vector x,z)
+   - Last hit height (normalized: body/head)
+   - Is currently in hit-stun state (boolean)
+   - Hit-stun time remaining (normalized)
+
+3. **Add recovery status observations** (~4 observations):
+   - Recovery progress (0-1, from hit-stun to normal)
+   - Current animation state (one-hot: normal/hit-stunned/stumbling/knocked-down)
+   - Distance fallen from impact (normalized, if stumbling back)
+   - Can perform recovery action (boolean)
+
+4. **Update total observation count**:
+   - Previous: ~69
+   - New balance observations: ~18
+   - New total: ~87 observations
+   - Update BehaviorParameters Vector Observation Space Size to 87
+
+5. **Implement observation collection**:
+   - Calculate center of mass projection onto ground plane
+   - Determine support polygon from foot positions (use Physics.Raycast)
+   - Calculate stability metric (distance from CoM to polygon edge)
+   - Get last hit data from CharacterHealth or CharacterCombat component
+   - Track hit-stun duration and recovery progress
+
+6. **Handle knockdown observations**:
+   - If character knocked down, add specific observations:
+     - Ground contact (full body boolean)
+     - Orientation (angle from upright)
+     - Time knocked down (normalized)
 
 **Verification Checklist:**
-- [ ] ScriptableObject appears in Create menu
-- [ ] OnValidate ensures valid sequence configuration
-- [ ] Sequence length calculated correctly
-- [ ] All fields have tooltips and XML docs
+- [ ] Observation space updated to ~87 dimensions
+- [ ] Balance stability calculates correctly
+- [ ] Hit impact data captured accurately
+- [ ] Recovery progress tracks over time
+- [ ] No NaN values in new observations
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Combos/ComboSequenceDataTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate prevents sequences with < 2 attacks
-- OnValidate clamps damage bonus to [1.0, 3.0]
-- SequenceLength property correct
-- Frame-to-second conversion correct
+- Unit tests for CoM and support polygon calculations
+- Manual testing: get hit and verify hit impact observations update
+- Check balance stability metric as character leans
 
 **Commit Message Template:**
 ```
-feat(combos): add ComboSequenceData ScriptableObject
+feat(observations): add balance and hit reaction observations
 
-- Define predefined combo sequence structure
-- Configure attack patterns and bonuses
-- Validate sequence configuration
+- Added balance state observations (CoM, stability, tilt, contact)
+- Added hit impact observations (force, direction, height, stun)
+- Added recovery status observations (progress, state, actions)
+- Implemented center of mass and support polygon calculations
+- Updated observation space to 87 dimensions
+- Added unit tests for balance calculations
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 2: Create ComboChainData ScriptableObject
+## Task 2: Add Balance Recovery Actions
 
-**Goal:** Define natural combo chain timing windows per attack type.
+**Goal:** Expand action space to allow agent to control balance recovery movements.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/ComboChainData.cs` - ScriptableObject class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (modify)
 
 **Prerequisites:**
-- Understand DD-002 (variable timing by attack)
+- Task 1 completed (balance observations added)
+- Phase 2 actions working (15 dimensions)
 
 **Implementation Steps:**
 
-1. Create `ComboChainData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Combo Chain Data"` (order = 7)
-3. Define chain timing configuration:
-   - Chain window frames array (indexed by attack type: [Jab window, Hook window, Uppercut window])
-   - Global combo timeout frames (max time between any hits before combo resets)
-   - Damage scaling array (float array: [1.0, 0.75, 0.5, 0.5, ...] for 1st, 2nd, 3rd+ hits)
-4. Expose public read-only properties
-5. Add methods:
-   - `GetChainWindow(int attackTypeIndex)` → returns frame count
-   - `GetDamageScale(int comboHitNumber)` → returns multiplier (1-indexed)
-6. Implement `OnValidate()`:
-   - Ensure 3 chain window values (one per attack type)
-   - Ensure damage scaling descends (each value ≤ previous)
-   - Clamp all values to valid ranges
-7. Add XML documentation
+1. **Expand action space** from 15 to 20 continuous actions:
+   - Movement actions (0-7): Unchanged
+   - Attack actions (8-12): Unchanged
+   - **Recovery step direction** (index 13): Continuous [-1, 1] for lateral step to regain balance
+   - **Recovery step distance** (index 14): Continuous [0, 1] for step magnitude
+   - **Brace action** (index 15): Continuous [0, 1] threshold for bracing against impact
+   - **Counter-rotation** (index 16): Continuous [-1, 1] for torso twist to counter spin
+   - **Crouch for stability** (index 17): Continuous [0, 1] for lowering CoM
+   - **Unused** (indices 18-19): Reserved for Phase 4 (defense)
 
-**Design Guidance:**
-- Default chain windows from DD-002:
-  - Jab: 18 frames (~0.3s) - forgiving
-  - Hook: 12 frames (~0.2s) - medium
-  - Uppercut: 6 frames (~0.1s) - tight
-- Heavy damage scaling: [1.0, 0.75, 0.5, 0.5] (floor at 50%)
-- Global timeout: 90 frames (~1.5s) - prevents infinitely long combos
+2. **Update BehaviorParameters**: Set Vector Action Space Size to 20
+
+3. **Interpret recovery actions in OnActionReceived**:
+   - Extract recovery actions (indices 13-17)
+   - Store in fields for FixedUpdate execution
+   - Clamp values to valid ranges
+
+4. **Implement recovery action execution logic**:
+   - **Recovery step**: If unstable, take quick step in specified direction
+     - Apply lateral force to Rigidbody
+     - Animate foot placement (IK or animation trigger)
+   - **Brace action**: Stiffen joints/increase drag when hit imminent
+     - Increase Rigidbody drag temporarily
+     - Widen stance for stability
+   - **Counter-rotation**: Apply torque opposite to spin from hit
+     - Counteract angular velocity from impact
+   - **Crouch**: Lower center of mass for stability
+     - Reduce CoM height (already implemented in Phase 1, reuse)
+
+5. **Enable recovery actions only in appropriate states**:
+   - Recovery actions only execute when character in hit-stun or stumbling
+   - Disable during normal combat (use movement/attack instead)
+   - Check combat state before executing
+
+6. **Update Heuristic for testing**:
+   - Map keys to recovery actions:
+     - Arrow keys: Recovery step direction
+     - Space: Brace
+     - Ctrl: Crouch for stability
+   - Allows manual testing of recovery system
 
 **Verification Checklist:**
-- [ ] ScriptableObject created successfully
-- [ ] Chain windows configurable per attack
-- [ ] Damage scaling array validated
-- [ ] Helper methods return correct values
+- [ ] Action space updated to 20 dimensions
+- [ ] Recovery actions interpreted correctly
+- [ ] Recovery step applies lateral force
+- [ ] Brace increases stability when hit
+- [ ] Counter-rotation reduces spin
+- [ ] Actions only execute in appropriate states
+- [ ] Heuristic control works for recovery testing
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Combos/ComboChainDataTests.cs`
-
-Test cases:
-- GetChainWindow returns correct frames for each attack type
-- GetDamageScale returns correct multiplier for combo position
-- OnValidate ensures descending damage scale
-- Default values match design spec
+- Manual testing in Heuristic mode:
+  - Get hit and use recovery keys
+  - Verify recovery step prevents falling
+  - Test brace reduces knockback
+  - Test counter-rotation stops spinning
+- Verify recovery actions don't interfere with normal combat
 
 **Commit Message Template:**
 ```
-feat(combos): add ComboChainData ScriptableObject
+feat(actions): add balance recovery actions
 
-- Define natural chain timing per attack type
-- Configure damage scaling progression
-- Variable timing windows (Jab easy, Uppercut hard)
+- Expanded action space from 15 to 20 continuous actions
+- Added recovery step direction and distance actions
+- Added brace action for impact absorption
+- Added counter-rotation action for spin recovery
+- Added crouch action for stability
+- Implemented recovery action execution in FixedUpdate
+- Enabled recovery actions only during hit-stun/stumbling
+- Updated Heuristic with recovery key mappings
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 3: Create CharacterComboTracker Component
+## Task 3: Implement Balance Physics Controllers
 
-**Goal:** Track combo state, detect chains and sequences, apply damage scaling.
+**Goal:** Create physics systems for realistic stumbling, balance recovery, and knockdown mechanics.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/BalanceController.cs` (new)
+- `Assets/Knockout/Scripts/Combat/HitReactionSystem.cs` (new or modify existing)
 
 **Prerequisites:**
-- Task 1 complete (ComboSequenceData)
-- Task 2 complete (ComboChainData)
-- Review `CharacterCombat` for attack execution hooks
+- Task 2 completed (recovery actions added)
+- Understanding of balance physics and PD controllers
 
 **Implementation Steps:**
 
-1. Create `CharacterComboTracker` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern:
-   - Dependencies: `CharacterController`, `ComboChainData`, `CharacterCombat`, list of `ComboSequenceData[]`
-   - Subscribe to attack events: `OnAttackStarted`, `OnHitLanded`, `OnAttackBlocked`, `OnHitTaken`
-3. Track combo state:
-   - Current combo count (int, number of consecutive hits)
-   - Attack sequence history (List of attack type indices)
-   - Last attack timestamp (frame count)
-   - Current combo damage scaling multiplier
-4. Implement natural chain detection:
-   - On attack landed: check if within chain window from last attack
-   - If yes: increment combo count, add to sequence history
-   - If no: reset combo (late attack)
-   - Use attack-specific chain window from ComboChainData
-5. Implement predefined sequence detection:
-   - On each hit, check sequence history against all ComboSequenceData in array
-   - If sequence matches: fire `OnComboSequenceCompleted` event with sequence data
-   - Apply sequence bonus to damage (modify before hit applies)
-6. Implement damage scaling:
-   - Expose method `GetCurrentDamageMultiplier()` for CharacterCombat to query
-   - Returns scaling based on combo position (from ComboChainData)
-7. Implement combo breaking:
-   - Subscribe to `OnAttackBlocked`: if blocker blocked within small window, break combo
-   - Subscribe to `OnHitTaken`: if attacker hit/staggered, break combo
-   - Breaking resets combo count to 0
-8. Expose properties: `ComboCount`, `IsInCombo`, `CurrentSequence`
-9. Fire events: `OnComboStarted`, `OnComboHitLanded(hitNumber)`, `OnComboEnded`, `OnComboSequenceCompleted(sequenceData)`
+1. **Create BalanceController class**:
+   - Serialized parameters:
+     - Balance threshold (how far CoM can be from support before unstable)
+     - Recovery force magnitude
+     - Stumble duration curve
+     - Knockdown force threshold
+     - Brace effectiveness multiplier
 
-**Design Guidance:**
-- Follow ADR-004 (frame-based timing)
-- Chain window starts after attack recovery frames end
-- Sequence detection is inclusive (partial matches don't break combo, just don't grant bonus yet)
-- Damage scaling applies to all hits, sequence bonus applies to final hit of sequence
-- Combo breaks immediately on block/hit (small window allows defender to interrupt)
+2. **Implement balance monitoring**:
+   - Method: `CheckBalanceStability()` → BalanceState enum
+   - Calculate center of mass projection onto ground
+   - Determine support polygon from foot contacts
+   - Return state: Balanced, Unstable, Stumbling, FallingDown
+   - Use Physics.Raycast to detect foot ground contact
+
+3. **Implement hit reaction force application**:
+   - Method: `ApplyHitReactionForce(Vector3 hitForce, Vector3 hitPoint, bool bracing)`
+   - When hit received (listen to CharacterHealth.OnDamageReceived event):
+     - Apply force to Rigidbody at hit location
+     - If bracing: reduce force magnitude by brace effectiveness
+     - Calculate resulting CoM offset from impact
+     - Determine if knockdown threshold exceeded
+     - Trigger stumble or knockdown state
+
+4. **Implement stumbling mechanics**:
+   - Method: `SimulateStumble(Vector3 impactDirection, float magnitude)`
+   - Apply backwards momentum in hit direction
+   - Reduce movement control (multiply movement input by 0.3)
+   - Gradually restore balance using PD controller
+   - Play stumble animation (backward step, catch balance)
+   - Duration based on hit force and agent's recovery actions
+
+5. **Implement balance recovery PD controller**:
+   - Method: `ApplyBalanceRecoveryForce(Vector3 targetCoM, float recoveryIntensity)`
+   - Calculate error: current CoM vs target (center of support polygon)
+   - Calculate derivative: CoM velocity
+   - Apply corrective force: `F = Kp * error + Kd * derivative`
+   - Tune gains: Kp=200, Kd=20 (adjust experimentally)
+   - Agent's recovery actions modify target CoM
+
+6. **Implement recovery step execution**:
+   - Method: `ExecuteRecoveryStep(Vector2 stepDirection, float stepDistance)`
+   - Apply impulse force in step direction
+   - Expand support polygon by moving foot
+   - Use IK to place foot at target position
+   - Immediately stabilize after step completes
+
+7. **Implement brace mechanics**:
+   - Method: `ApplyBraceEffect(float intensity)`
+   - Increase Rigidbody drag temporarily (simulate tensing muscles)
+   - Widen stance slightly (more stable base)
+   - Reduce hit force impact by brace effectiveness (e.g., 50% reduction at full brace)
+
+8. **Implement counter-rotation**:
+   - Method: `ApplyCounterRotation(float intensity)`
+   - Measure current angular velocity
+   - Apply torque in opposite direction scaled by intensity
+   - Helps recover from spinning hits (hooks)
+
+9. **Implement knockdown physics**:
+   - Method: `TriggerKnockdown(Vector3 force)`
+   - If hit force exceeds threshold and balance critical:
+     - Disable balance controller temporarily
+     - Let physics simulate fall (ragdoll-lite)
+     - Play knockdown animation
+     - After delay, allow recovery attempt
+   - Recovery: gradually restore kinematic control, stand up
+
+10. **Integrate with PhysicsAgent**:
+    - In FixedUpdate:
+      - Run CheckBalanceStability()
+      - If unstable/stumbling, apply balance recovery forces
+      - Execute recovery actions from agent (step, brace, counter-rotate)
+    - Listen to damage events and apply hit reaction forces
+
+11. **Tune parameters**:
+    - Balance threshold: CoM must be within 0.8x support polygon radius
+    - Stumble duration: 0.5-2.0 seconds based on hit force
+    - Knockdown threshold: 1500N impact force
+    - Recovery force: 800-1200N
+    - Brace reduction: 0.4-0.6 (40-60% damage reduction)
 
 **Verification Checklist:**
-- [ ] Component initializes correctly
-- [ ] Natural chains detected with correct timing
-- [ ] Damage scaling applied correctly
-- [ ] Predefined sequences detected
-- [ ] Combo breaks on block/hit
-- [ ] Events fire correctly
+- [ ] BalanceController compiles without errors
+- [ ] Balance stability monitoring works
+- [ ] Hit reactions apply forces realistically
+- [ ] Stumbling occurs when hit hard
+- [ ] Balance recovery brings character back to stable
+- [ ] Recovery step prevents falls
+- [ ] Brace reduces knockback when hit
+- [ ] Counter-rotation stops spinning
+- [ ] Knockdowns occur at appropriate force levels
+- [ ] Physics feels natural and responsive
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Combos/CharacterComboTrackerTests.cs`
-
-Test cases:
-- Landing consecutive hits within chain window creates combo
-- Landing hit outside chain window resets combo
-- Combo count increments correctly
-- Damage scaling applied (2nd hit = 75%, 3rd = 50%)
-- Predefined sequence detected (e.g., Jab-Jab-Hook)
-- Blocking during combo breaks it
-- Getting hit during combo breaks it
-- OnComboHitLanded events fire with correct hit number
+- Manual testing with Heuristic control:
+  - Get hit and observe stumble behavior
+  - Use recovery actions to regain balance
+  - Test brace before getting hit (should reduce stumble)
+  - Get hit by strong attack and verify knockdown
+  - Test recovery from knockdown
+- Verify balance controller doesn't interfere with normal movement
 
 **Commit Message Template:**
 ```
-feat(combos): implement CharacterComboTracker component
+feat(physics-controllers): implement balance and hit reaction physics
 
-- Track combo state and hit sequences
-- Detect natural chains with variable timing
-- Detect predefined combo sequences
-- Apply damage scaling and bonuses
-- Handle combo interruption
+- Created BalanceController for physics-based balance management
+- Implemented balance stability monitoring with CoM calculations
+- Applied hit reaction forces based on impact location and force
+- Simulated realistic stumbling with backward momentum
+- Implemented PD controller for balance recovery
+- Added recovery step execution with IK foot placement
+- Implemented brace mechanics to reduce hit impact
+- Added counter-rotation to recover from spinning hits
+- Implemented knockdown physics for high-force impacts
+- Tuned balance parameters for realistic behavior
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~12,000
+**Estimated tokens:** ~12,000
 
 ---
 
-### Task 4: Integrate Combo Tracking with CharacterCombat
+## Task 4: Implement Balance and Recovery Reward Function
 
-**Goal:** Apply combo damage scaling to attacks and enable combo tracking hooks.
+**Goal:** Design rewards that encourage maintaining balance, recovering quickly from hits, and continuing to fight.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs` - Add combo integration
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (modify)
 
 **Prerequisites:**
-- Task 3 complete (CharacterComboTracker exists)
-- Understand attack damage calculation in CharacterCombat
+- Task 3 completed (balance physics working)
 
 **Implementation Steps:**
 
-1. Add dependency on `CharacterComboTracker` (GetComponent or explicit reference)
-2. Modify damage calculation:
-   - Before applying damage, query `comboTracker.GetCurrentDamageMultiplier()`
-   - Multiply attack damage by combo scaling
-   - Apply any sequence bonuses if sequence completed
-3. Fire attack events with combo context:
-   - Ensure `OnHitLanded` includes combo information (hit number)
-   - Fire events that ComboTracker subscribes to
-4. Handle combo-modified attacks:
-   - Sequence bonuses may modify knockback, stagger chance, etc.
-   - Apply these modifications from ComboSequenceData properties
+1. **Add balance maintenance rewards**:
+   - **Balance Stability Reward** (+0.05 per frame):
+     - Reward for maintaining CoM within support polygon
+     - Higher reward for more stable balance (closer to center)
+     - Encourages proactive balance control
+   - **Avoid Stumble Reward** (+0.5 per hit absorbed without stumbling):
+     - Reward for taking hit but staying upright via bracing
+     - Encourages defensive balance techniques
+   - **Grounding Reward** (+0.02 per frame):
+     - Reward for both feet on ground
+     - Already in Phase 1, but now more critical during hit recovery
 
-**Design Guidance:**
-- Damage calculation flow: base damage → combo scaling → sequence bonus → final damage
-- Combo scaling is multiplicative with existing damage multipliers (CharacterStats)
-- Sequence bonus applies only on sequence completion hit
+2. **Add recovery performance rewards**:
+   - **Quick Recovery Reward** (+2.0 inversely proportional to recovery time):
+     - Reward for recovering balance quickly after hit
+     - Faster recovery = higher reward
+     - Formula: `2.0 * (1.0 - time_to_recover / max_recovery_time)`
+   - **Recovery Action Effectiveness** (+0.3 per successful recovery step):
+     - Reward if recovery step prevented fall
+     - Measure stability before and after step
+   - **Resilience Reward** (+1.0 for continuing to fight after hit):
+     - Reward for attacking or moving purposefully within 2 seconds of being hit
+     - Encourages "shaking off" hits and re-engaging
+
+3. **Add physical realism for hit reactions**:
+   - **Natural Stumble Reward** (+0.1 per hit reaction):
+     - Reward if stumble direction matches hit direction (physics realism)
+     - Penalize unnatural reactions (stumbling toward hit)
+   - **Appropriate Brace Timing** (+0.2 per well-timed brace):
+     - Reward for bracing just before hit lands
+     - Requires prediction of incoming attack
+   - **Counter-Rotation Usage** (+0.1 per spin recovery):
+     - Reward for using counter-rotation when spinning from hook
+
+4. **Add strategic fighting rewards**:
+   - **Fight Through Adversity** (+0.5):
+     - Reward for winning round despite being knocked down
+     - Encourages not giving up
+   - **Capitalize on Opponent's Stumble** (+0.3):
+     - Reward for attacking opponent who is stumbling/recovering
+     - Teaches to press advantage
+   - **Defensive Recovery** (+0.2 per defensive action during recovery):
+     - Reward for blocking or evading during recovery period
+     - Phase 4 will add blocking, placeholder for now
+
+5. **Add penalties for poor balance**:
+   - **Falling Penalty** (-1.0 per fall/knockdown):
+     - Negative reward for losing balance completely
+     - Encourages balance maintenance
+   - **Extended Recovery Penalty** (-0.05 per frame stumbling beyond threshold):
+     - Penalize prolonged recovery times
+     - Encourages efficient recovery actions
+   - **Failed Brace Penalty** (-0.1 if bracing but still stumble significantly):
+     - Penalize ineffective brace timing
+
+6. **Add sparse milestone rewards**:
+   - **Iron Chin Bonus** (+5.0): Take 5+ hits in round without knockdown
+   - **Rocky Comeback** (+10.0): Win round after being knocked down
+   - **Unshakeable** (+3.0): Win round without stumbling
+
+7. **Update reward weight balance**:
+   - Combat effectiveness: 0.4
+   - Physical realism: 0.25 (increased to emphasize realistic reactions)
+   - Strategic depth: 0.2
+   - Player entertainment: 0.15
+
+8. **Handle knockdown scenario**:
+   - During knockdown, minimal rewards (only recovery rewards)
+   - Large penalty for staying down too long
+   - Large reward for successful stand-up
+
+9. **Add reward debugging for balance**:
+   - Log balance stability metric
+   - Track stumble duration statistics
+   - Monitor recovery effectiveness
+   - Visualize balance rewards separately
 
 **Verification Checklist:**
-- [ ] Combo damage scaling applied to hits
-- [ ] Sequence bonuses applied on completion
-- [ ] First hit does full damage
-- [ ] Subsequent hits scaled correctly (75%, 50%)
-- [ ] Events fire with correct combo context
+- [ ] Balance stability reward calculated correctly
+- [ ] Recovery time tracked and rewarded
+- [ ] Stumble direction realism checked
+- [ ] Brace timing detection works
+- [ ] Knockdown penalties applied
+- [ ] Recovery action effectiveness measured
+- [ ] Milestone rewards trigger appropriately
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Characters/CharacterCombatTests.cs`
-
-Test cases:
-- First hit deals 100% damage
-- Second hit in combo deals 75% damage
-- Third hit in combo deals 50% damage
-- Completing predefined sequence applies bonus
-- Combo damage stacks with character damage multipliers correctly
+- Manual Heuristic testing:
+  - Maintain balance and observe rewards
+  - Get hit, recover quickly, check recovery rewards
+  - Use brace effectively and verify timing rewards
+  - Get knocked down and observe penalties
+- Verify reward balance doesn't dominate other components
 
 **Commit Message Template:**
 ```
-feat(combos): integrate combo damage scaling into combat
+feat(rewards): implement balance and recovery reward function
 
-- Query combo tracker for damage multiplier
-- Apply combo scaling to attack damage
-- Apply sequence bonuses on completion
+- Added balance maintenance rewards (stability, avoid stumble, grounding)
+- Added recovery performance rewards (quick recovery, action effectiveness)
+- Added physical realism rewards (natural stumble, brace timing, counter-rotation)
+- Added strategic fighting rewards (capitalize on stumbles, fight through adversity)
+- Added penalties for poor balance and extended recovery
+- Added sparse milestone rewards (iron chin, rocky comeback)
+- Updated reward weights to emphasize physical realism
+- Implemented knockdown scenario reward handling
+- Added balance-specific reward debugging and logging
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~6,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Implement Combo Interruption Logic
+## Task 5: Create Balance Training Configuration
 
-**Goal:** Allow blocking or hitting attacker to break combos with small timing windows.
+**Goal:** Configure ML-Agents training for balance and hit reaction learning.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Add interruption detection
-- `Assets/Knockout/Scripts/Combat/States/BlockingState.cs` - Signal combo break on successful block
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Config/balance_training.yaml` (new)
 
 **Prerequisites:**
-- Task 3 complete (CharacterComboTracker base implementation)
-- Understand blocking and hit detection timing
+- Task 4 completed (balance rewards implemented)
 
 **Implementation Steps:**
 
-1. Define "small window" for combo breaking:
-   - Create configurable field in ComboChainData: `comboBreakWindow` (frames, e.g., 6-8 frames)
-   - Window represents reaction time defender has to block/counter
-2. In CharacterComboTracker:
-   - Track when each hit lands (timestamp)
-   - On `OnAttackBlocked` event: check if block occurred within break window after hit
-   - If yes: break combo (reset count, fire `OnComboBroken` event)
-   - If no: combo continues (defender blocked too late)
-3. On `OnHitTaken` (attacker gets hit):
-   - Immediately break combo (mutual trading)
-   - Reset combo state
-   - Fire `OnComboBroken` event
-4. In BlockingState:
-   - Fire event when block successfully stops attack
-   - Include timestamp for combo break window check
+1. **Create balance_training.yaml** based on attack_training.yaml
 
-**Design Guidance:**
-- Small window means defender must react quickly (6-8 frames = 0.1-0.133s)
-- Blocking late (after window) doesn't break combo, just reduces damage
-- Getting hit always breaks combo (no combo continuation on trade)
-- Visual/audio feedback important (defender needs to know combo broke)
+2. **Update hyperparameters**:
+   - `batch_size: 4096` (maintain complexity handling)
+   - `buffer_size: 40960`
+   - `learning_rate: 2e-4`
+   - `beta: 6e-3` (slightly lower than attack training, less exploration needed)
+   - `max_steps: 6000000`
+
+3. **Network architecture**:
+   - `hidden_units: 384` (maintain from Phase 2)
+   - `num_layers: 3`
+
+4. **Configure transfer learning** from Phase 2:
+   - Use `--initialize-from=attack_phase2`
+   - Agent keeps movement and attack skills while learning balance
+
+5. **Self-play settings**:
+   - `save_steps: 100000`
+   - `play_against_latest_model_ratio: 0.6`
+
+6. **Add curriculum for balance difficulty** (optional):
+   - Lesson 1: Light hits (low force), easy to recover
+   - Lesson 2: Medium hits, require recovery actions
+   - Lesson 3: Full force hits, knockdowns possible
+   - Use ML-Agents curriculum parameter feature
 
 **Verification Checklist:**
-- [ ] Blocking within window breaks combo
-- [ ] Blocking outside window doesn't break combo
-- [ ] Getting hit breaks combo immediately
-- [ ] OnComboBroken event fires
-- [ ] Combo state resets correctly
+- [ ] balance_training.yaml valid syntax
+- [ ] Transfer learning configured
+- [ ] Hyperparameters appropriate
+- [ ] Curriculum defined (if using)
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Combos/CharacterComboTrackerTests.cs`
-
-Test cases:
-- Blocking immediately after hit (within window) breaks combo
-- Blocking late (outside window) doesn't break combo
-- Attacker getting hit breaks combo
-- Combo count resets to 0 on break
-- OnComboBroken event fires
+- Validate config before training
 
 **Commit Message Template:**
 ```
-feat(combos): implement combo interruption system
+feat(training): create balance training configuration
 
-- Add combo break window configuration
-- Break combo on quick block reaction
-- Break combo when attacker hit
-- Fire OnComboBroken event for feedback
+- Created balance_training.yaml based on attack config
+- Configured transfer learning from Phase 2 model
+- Maintained network architecture for consistency
+- Set max steps to 6M for balance learning
+- Configured curriculum for progressive difficulty
+- Tuned entropy for balance exploration
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~6,000
+**Estimated tokens:** ~7,000
 
 ---
 
-### Task 6: Create Character-Specific Combo Sequences
+## Task 6: Train Balance Agent and Evaluate
 
-**Goal:** Design and create example combo sequences for base character.
+**Goal:** Execute training and evaluate balance recovery behavior.
 
-**Files to Create:**
-- `Assets/Knockout/Data/Combos/BaseCharacter_Jab12Combo.asset` - "1-2" combo (Jab-Jab)
-- `Assets/Knockout/Data/Combos/BaseCharacter_Hook12Combo.asset` - "1-2-Hook" (Jab-Jab-Hook)
-- `Assets/Knockout/Data/Combos/BaseCharacter_UppercutFinisher.asset` - Uppercut finisher (Hook-Uppercut)
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Models/balance_phase3.onnx`
+- `docs/TRAINING_LOG.md` (update)
 
 **Prerequisites:**
-- Task 1 complete (ComboSequenceData exists)
+- Tasks 1-5 completed
+- Phase 2 model available
 
 **Implementation Steps:**
 
-1. Create "1-2" combo (Jab-Jab):
-   - Sequence: [0, 0] (Jab, Jab)
-   - Timing window: 18 frames (same as Jab chain window)
-   - Damage bonus: 1.25x on second Jab
-   - Properties: None (basic combo)
-2. Create "1-2-Hook" combo (Jab-Jab-Hook):
-   - Sequence: [0, 0, 1] (Jab, Jab, Hook)
-   - Timing window: 15 frames (tighter than natural)
-   - Damage bonus: 1.5x on Hook
-   - Properties: Enhanced knockback
-3. Create "Hook-Uppercut Finisher":
-   - Sequence: [1, 2] (Hook, Uppercut)
-   - Timing window: 8 frames (tight timing)
-   - Damage bonus: 2.0x on Uppercut
-   - Properties: Guaranteed stagger or enhanced knockdown
-4. Save in `Assets/Knockout/Data/Combos/` directory
+1. **Start training**:
+   ```bash
+   mlagents-learn Assets/Knockout/Training/Config/balance_training.yaml --run-id=balance_phase3 --initialize-from=attack_phase2 --time-scale=20
+   ```
 
-**Design Guidance:**
-- Start with 2-3 sequences for testing
-- Vary difficulty: easy (Jab-Jab), medium (Jab-Jab-Hook), hard (Hook-Uppercut)
-- Rewards scale with difficulty (tighter timing = better bonus)
-- These are templates; different characters will have unique sequences
+2. **Monitor balance-specific metrics**:
+   - Stumble frequency (should decrease)
+   - Knockdown rate (should decrease)
+   - Average recovery time (should decrease)
+   - Balance stability metric (should increase)
+
+3. **Training duration**: 4-6M steps (~3-5 hours)
+
+4. **Evaluate trained model**:
+   - Quantitative:
+     - Knockdown rate compared to Phase 2
+     - Average time to recover balance
+     - Percentage of hits absorbed without stumbling
+   - Qualitative:
+     - [ ] Agents stumble realistically when hit
+     - [ ] Stumble direction matches hit direction
+     - [ ] Agents use recovery actions to regain balance
+     - [ ] Brace reduces knockback visibly
+     - [ ] Quick recovery allows continued fighting
+     - [ ] Knockdowns occur only on very hard hits
+     - [ ] Agents stand up from knockdowns
+     - [ ] Balance maintained during normal movement (Phase 1 quality retained)
+     - [ ] Attack execution maintained (Phase 2 quality retained)
+
+5. **Compare to Phase 2**:
+   - Should retain attack and movement capabilities
+   - Plus now recover from hits effectively
+
+6. **Export model** as `balance_phase3.onnx`
+
+7. **Document results** in `docs/TRAINING_LOG.md`
+
+8. **Troubleshooting**:
+   - **Agents ignore recovery actions**: Increase recovery rewards
+   - **Too many knockdowns**: Lower knockdown force threshold
+   - **Unrealistic stumbles**: Adjust hit reaction force application
+   - **Skills degraded**: Use transfer learning, increase reward weights for prior skills
 
 **Verification Checklist:**
-- [ ] Assets created successfully
-- [ ] Sequences configured correctly
-- [ ] Timing windows and bonuses balanced
-- [ ] Assets assignable to CharacterComboTracker
-
-**Testing Instructions:**
-
-Manual testing:
-- Assign sequences to character in scene
-- Enter play mode
-- Execute sequences and verify bonuses apply
+- [ ] Training completes successfully
+- [ ] Stumble behavior looks realistic
+- [ ] Recovery actions functional
+- [ ] Knockdown rate reasonable (<20% of hits)
+- [ ] Previous skills (movement, attacks) maintained
+- [ ] Model exported and tested
 
 **Commit Message Template:**
 ```
-feat(combos): add base character combo sequences
+feat(training): train balance recovery agent
 
-- Create "1-2" Jab combo
-- Create "1-2-Hook" combo
-- Create "Hook-Uppercut Finisher"
-- Template sequences for character customization
+- Trained for 5M steps with transfer learning from Phase 2
+- Agents demonstrate realistic hit reactions and stumbling
+- Recovery actions reduce knockdown rate by 40%
+- Balance stability improved significantly
+- Movement and attack quality maintained from previous phases
+- Exported balance_phase3.onnx model
+- Documented training in TRAINING_LOG.md
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
-
----
-
-### Task 7: Create Default ComboChainData Asset
-
-**Goal:** Create default combo chain configuration with variable timing windows.
-
-**Files to Create:**
-- `Assets/Knockout/Data/Combos/DefaultComboChain.asset` - ComboChainData instance
-
-**Prerequisites:**
-- Task 2 complete (ComboChainData exists)
-
-**Implementation Steps:**
-
-1. Create DefaultComboChain asset
-2. Configure chain windows (frames at 60fps):
-   - Jab chain window: 18 frames (~0.3s)
-   - Hook chain window: 12 frames (~0.2s)
-   - Uppercut chain window: 6 frames (~0.1s)
-3. Configure damage scaling:
-   - 1st hit: 1.0 (100%)
-   - 2nd hit: 0.75 (75%)
-   - 3rd hit: 0.5 (50%)
-   - 4th+ hits: 0.5 (floor at 50%)
-4. Set global combo timeout: 90 frames (~1.5s)
-5. Set combo break window: 8 frames (~0.133s)
-6. Save in `Assets/Knockout/Data/Combos/`
-
-**Design Guidance:**
-- Values match DD-002 heavy scaling design
-- Variable windows create skill expression (Jab chains easy, Uppercut requires precision)
-
-**Verification Checklist:**
-- [ ] Asset created successfully
-- [ ] Values match design spec
-- [ ] Chain windows vary by attack type
-- [ ] Damage scaling configured correctly
-
-**Testing Instructions:**
-
-Manual verification:
-- Asset appears in project
-- Values display correctly
-- No validation errors
-
-**Commit Message Template:**
-```
-feat(combos): add default combo chain configuration
-
-- Configure variable timing windows per attack
-- Set heavy damage scaling (75%, 50%)
-- Template for character-specific tuning
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 8: Update Character Prefab with Combo System
-
-**Goal:** Add combo tracking to character prefab and assign configurations.
-
-**Files to Modify:**
-- `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` - Add component
-
-**Prerequisites:**
-- Task 3 complete (CharacterComboTracker exists)
-- Task 6 complete (combo sequence assets exist)
-- Task 7 complete (DefaultComboChain exists)
-
-**Implementation Steps:**
-
-1. Open BaseCharacter prefab
-2. Add `CharacterComboTracker` component
-3. Assign dependencies:
-   - Character Controller
-   - Character Combat
-   - ComboChainData: DefaultComboChain
-4. Assign combo sequences:
-   - Add array of 3 combo sequences (Jab-Jab, Jab-Jab-Hook, Hook-Uppercut)
-5. Verify component initialization order
-6. Test in play mode
-
-**Design Guidance:**
-- Combo tracker initializes after CharacterCombat
-- Sequences are character-specific (different characters will have different arrays)
-
-**Verification Checklist:**
-- [ ] Component added to prefab
-- [ ] Dependencies assigned
-- [ ] Combo sequences assigned
-- [ ] Component initializes without errors
-- [ ] Combos functional in play mode
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Execute natural chains (Jab-Jab-Jab)
-- Execute predefined sequences (Jab-Jab-Hook)
-- Verify damage scaling applies
-- Verify sequence bonuses apply
-
-**Commit Message Template:**
-```
-feat(combos): add combo system to character prefab
-
-- Add CharacterComboTracker component
-- Assign default combo chain configuration
-- Assign base character combo sequences
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 9: Add Combo Visual Feedback Hooks
-
-**Goal:** Fire events for UI/VFX to react to combo hits and completions.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Add feedback events
-
-**Prerequisites:**
-- Task 3 complete (CharacterComboTracker base implementation)
-
-**Implementation Steps:**
-
-1. Add public events in CharacterComboTracker:
-   - `OnComboHitLanded(int hitNumber, float damageDealt)` - fires on each combo hit
-   - `OnComboSequenceCompleted(ComboSequenceData sequence)` - fires when predefined sequence lands
-   - `OnComboBroken(int finalComboCount)` - fires when combo interrupted
-   - `OnComboEnded(int finalComboCount, float totalDamage)` - fires when combo times out naturally
-2. Fire events at appropriate points:
-   - OnComboHitLanded: after hit registered and damage applied
-   - OnComboSequenceCompleted: immediately when sequence detected
-   - OnComboBroken: when block/hit interrupts combo
-   - OnComboEnded: when combo timeout expires without continuation
-3. Include useful data in events for UI/VFX:
-   - Hit number in combo
-   - Damage dealt
-   - Sequence that completed
-   - Final combo stats (count, total damage)
-
-**Design Guidance:**
-- Events provide hooks for Phase 5 UI (combo counter, damage numbers)
-- VFX can react to sequence completions (special effects)
-- Audio can play increasing pitch for combo hits
-
-**Verification Checklist:**
-- [ ] Events defined with correct signatures
-- [ ] Events fire at correct moments
-- [ ] Event data accurate (hit numbers, damage values)
-- [ ] No event spam (fires once per occurrence)
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Combos/CharacterComboTrackerTests.cs`
-
-Test cases:
-- OnComboHitLanded fires for each hit with correct number
-- OnComboSequenceCompleted fires when sequence detected
-- OnComboBroken fires when combo interrupted
-- OnComboEnded fires when combo times out
-- Event data correct (hit numbers, damage, sequence info)
-
-**Commit Message Template:**
-```
-feat(combos): add combo feedback events for UI/VFX
-
-- Fire OnComboHitLanded with hit number and damage
-- Fire OnComboSequenceCompleted when sequence lands
-- Fire OnComboBroken and OnComboEnded with combo stats
-- Prepare hooks for Phase 5 UI integration
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 10: Implement Combo Counter Window After Parry
-
-**Goal:** Integrate parry counter window with combo system for bonus damage opportunities.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Add counter window tracking
-- `Assets/Knockout/Scripts/Characters/Components/CharacterParry.cs` - Signal counter window
-
-**Prerequisites:**
-- Phase 2 complete (CharacterParry exists)
-- Task 3 complete (CharacterComboTracker exists)
-
-**Implementation Steps:**
-
-1. In CharacterParry:
-   - On successful parry, fire `OnCounterWindowOpened(float duration)` event
-2. In CharacterComboTracker:
-   - Subscribe to `OnCounterWindowOpened`
-   - Track if currently in counter window
-   - Property: `IsInCounterWindow` (bool)
-3. Apply counter window bonus:
-   - First hit during counter window gets damage bonus (e.g., +25%)
-   - OR first hit during counter window starts combo at 2x instead of 1x
-   - Configurable in ComboChainData: `counterWindowDamageBonus`
-4. Counter window expires after parry duration (from ParryData)
-
-**Design Guidance:**
-- Counter window reward is optional (can be just psychological advantage of attacker stagger)
-- If implementing damage bonus, keep it modest (1.25x, not game-breaking)
-- Bonus applies to first hit only (subsequent hits follow normal combo scaling)
-
-**Verification Checklist:**
-- [ ] Parry opens counter window
-- [ ] IsInCounterWindow tracked correctly
-- [ ] Counter window damage bonus applies (if implemented)
-- [ ] Counter window expires after duration
-
-**Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Integration/ParryComboIntegrationTests.cs`
-
-Test cases:
-- Successful parry opens counter window
-- Attack during counter window gets bonus damage
-- Counter window expires after duration
-- Combo continues normally after counter window hit
-
-**Commit Message Template:**
-```
-feat(combos): integrate parry counter window with combos
-
-- Track counter window from successful parries
-- Apply damage bonus to first counter hit
-- Counter window tracked for combo timing
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 11: Add Combo Reset on Round Start/End
-
-**Goal:** Reset combo state between rounds to avoid cross-round combos.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Add reset method
-- `Assets/Knockout/Scripts/Systems/RoundManager.cs` - Call combo reset
-
-**Prerequisites:**
-- Task 3 complete (CharacterComboTracker exists)
-- Understand RoundManager round flow
-
-**Implementation Steps:**
-
-1. In CharacterComboTracker:
-   - Add public method `ResetCombo()`:
-     - Clear combo count
-     - Clear attack sequence history
-     - Reset timestamps
-     - Fire `OnComboEnded` if combo was active
-2. In RoundManager:
-   - On round start (`OnRoundStart` or countdown begin):
-     - Find all CharacterComboTracker components in scene
-     - Call `ResetCombo()` on each
-   - On round end (`OnRoundEnd`):
-     - Reset combos to clean state
-
-**Design Guidance:**
-- Prevents combos from spanning rounds (unrealistic)
-- Clean slate each round
-- Reset happens during countdown, not instantly (gives time for animations to finish)
-
-**Verification Checklist:**
-- [ ] ResetCombo method clears all combo state
-- [ ] RoundManager calls reset at round transitions
-- [ ] Combos don't persist across rounds
-- [ ] No errors on reset
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Systems/RoundManagerTests.cs`
-
-Test cases:
-- Starting new round resets combo state
-- Combo active at round end gets reset
-- Multiple rounds in sequence handle resets correctly
-
-**Commit Message Template:**
-```
-feat(combos): reset combos at round transitions
-
-- Add ResetCombo method to clear combo state
-- RoundManager resets combos on round start/end
-- Prevent cross-round combo persistence
-```
-
-**Estimated Tokens:** ~4,000
-
----
-
-### Task 12: Optimize Combo Detection Performance
-
-**Goal:** Ensure combo tracking doesn't degrade performance (60fps target).
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterComboTracker.cs` - Optimize detection
-
-**Prerequisites:**
-- Task 3 complete (CharacterComboTracker functional)
-
-**Implementation Steps:**
-
-1. Profile combo tracking:
-   - Use Unity Profiler to measure CharacterComboTracker.Update() cost
-   - Identify any expensive operations (list searches, allocations)
-2. Optimize sequence detection:
-   - Cache sequence data on initialization (don't repeatedly access ScriptableObjects)
-   - Use efficient matching algorithm (avoid nested loops)
-   - Consider: matching from longest sequence to shortest (early exit on partial matches)
-3. Avoid allocations:
-   - Reuse attack sequence list (clear and add, don't recreate)
-   - Cache frame count queries
-   - Avoid LINQ in hot paths
-4. Use FixedUpdate for frame-based timing (not Update)
-
-**Design Guidance:**
-- Combo tracking runs every frame for active combo, must be lightweight
-- Most expensive: sequence matching (minimize comparisons)
-- Cache immutable data, recalculate only when combo state changes
-
-**Verification Checklist:**
-- [ ] Combo tracking cost < 0.1ms per frame (Profiler)
-- [ ] No GC allocations during combo tracking
-- [ ] 60fps maintained with combo system active
-- [ ] Sequence detection remains accurate after optimization
-
-**Testing Instructions:**
-
-Performance testing:
-- Use Unity Profiler
-- Create scenario with long combos
-- Measure CharacterComboTracker CPU cost
-- Verify < 0.1ms per frame
-- Check GC allocations (should be 0 during gameplay)
-
-**Commit Message Template:**
-```
-perf(combos): optimize combo detection performance
-
-- Cache sequence data on initialization
-- Use efficient matching algorithm
-- Eliminate allocations in hot paths
-- Maintain 60fps target
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 13: Comprehensive Integration Testing
-
-**Goal:** Verify combo system works correctly in all scenarios.
-
-**Files to Create:**
-- `Assets/Knockout/Tests/PlayMode/Integration/ComboIntegrationTests.cs` - Integration tests
-
-**Prerequisites:**
-- All previous tasks complete
-
-**Implementation Steps:**
-
-1. Create integration test suite:
-   - Test: Natural combo chains with all attack types
-   - Test: Variable timing windows (Jab easy, Uppercut hard)
-   - Test: Damage scaling applied correctly across combo
-   - Test: Predefined sequence detection and bonuses
-   - Test: Combo breaking via blocking (timing window)
-   - Test: Combo breaking via attacker getting hit
-   - Test: Multiple predefined sequences in one combo
-   - Test: Combo timeout (exceeding global timeout resets)
-   - Test: Combo reset on round transitions
-   - Test: Parry counter window integration
-2. Test edge cases:
-   - Exactly on timing window boundary (hit at frame N)
-   - Switching attack types mid-combo
-   - Combo with 0 stamina (attacks fail, combo breaks)
-   - Two characters comboing simultaneously
-   - Sequence partial matches (Jab-Jab-Uppercut when only Jab-Jab-Hook sequence exists)
-
-**Design Guidance:**
-- Test realistic gameplay flows
-- Verify frame-perfect timing boundaries
-- Check event firing order and accuracy
-
-**Verification Checklist:**
-- [ ] All integration tests pass
-- [ ] Combo system functional in gameplay
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps)
-- [ ] Damage calculations correct
-
-**Testing Instructions:**
-
-Run all tests:
-- EditMode combo tests
-- PlayMode combo tests
-- Integration tests
-- Verify all green
-
-**Commit Message Template:**
-```
-test(combos): add comprehensive integration tests
-
-- Test natural chains and variable timing
-- Test damage scaling and sequence bonuses
-- Test combo interruption mechanics
-- Cover edge cases and timing boundaries
-```
-
-**Estimated Tokens:** ~10,000
-
----
-
-### Task 14: Documentation and Code Cleanup
-
-**Goal:** Document combo system, clean up code, finalize Phase 3.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/COMBO_SYSTEM.md` - System documentation
-
-**Files to Modify:**
-- All Phase 3 scripts - Remove debug logs, finalize comments
-
-**Prerequisites:**
-- All previous tasks complete
-- All tests passing
-
-**Implementation Steps:**
-
-1. Create COMBO_SYSTEM.md documentation:
-   - Overview of natural chains vs predefined sequences
-   - How to configure timing windows
-   - How to create character-specific combo sequences
-   - Damage scaling explanation
-   - Combo interruption mechanics
-   - Tips for balancing combos
-   - Troubleshooting guide
-2. Document combo sequence creation workflow:
-   - How to design sequences
-   - Timing window tuning
-   - Bonus balancing
-3. Review all scripts:
-   - Remove debug logs
-   - Finalize XML comments
-   - Verify naming conventions
-4. Update main documentation
-
-**Design Guidance:**
-- Documentation helps designers create balanced combos
-- Explain frame counts for precise tuning
-- Provide example sequences for reference
-
-**Verification Checklist:**
-- [ ] COMBO_SYSTEM.md comprehensive
-- [ ] All debug logs removed
-- [ ] XML comments complete
-- [ ] No compiler warnings
-
-**Testing Instructions:**
-
-Final checks:
-- Build project
-- Run all tests
-- Code review
-
-**Commit Message Template:**
-```
-docs(combos): add combo system documentation
-
-- Create COMBO_SYSTEM.md guide
-- Document natural chains and sequences
-- Explain damage scaling and interruption
-- Remove debug logging and finalize code
-```
-
-**Estimated Tokens:** ~5,000
+**Estimated tokens:** ~10,000
 
 ---
 
 ## Phase 3 Verification
 
-**Completion Checklist:**
-- [ ] All 14 tasks completed
-- [ ] All tests passing (EditMode + PlayMode)
-- [ ] Natural combo chains functional (variable timing windows)
-- [ ] Predefined sequences detected and bonuses applied
-- [ ] Damage scaling working correctly (75%, 50%)
-- [ ] Combo interruption functional (block/hit)
-- [ ] Character prefab updated with combo system
-- [ ] Default configurations created
-- [ ] Documentation complete
-- [ ] Code reviewed and cleaned
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps, Profiler shows CharacterComboTracker < 0.1ms per frame, no GC allocations during combo detection)
+Complete before proceeding to Phase 4:
 
-**Integration Points for Next Phase:**
-- Combo events available for UI (combo counter - Phase 5)
-- Combo tracking available for judge scoring (Phase 4)
-- Sequence completion events for VFX/audio (Phase 5)
-- Counter window integrated with parry system
+### Observations
+- [ ] Balance state observations added (~18 new)
+- [ ] Total observation space ~87 dimensions
+- [ ] Hit impact data captured correctly
+- [ ] Recovery status tracked
 
-**Known Limitations:**
-- Combo UI not implemented (Phase 5)
-- AI doesn't execute combos yet (post-Phase 5)
-- No combo challenges/trials in training mode (Phase 5)
-- Special moves don't benefit from combo damage scaling (Phase 4 decision)
+### Actions
+- [ ] Balance recovery actions added (total 20 actions)
+- [ ] Recovery step, brace, counter-rotation functional
+- [ ] Actions execute only in appropriate states
+
+### Physics Controllers
+- [ ] BalanceController implemented
+- [ ] Hit reactions apply forces realistically
+- [ ] Stumbling simulated naturally
+- [ ] Balance recovery PD controller working
+- [ ] Brace reduces impact effectively
+- [ ] Knockdowns occur at appropriate thresholds
+
+### Reward Function
+- [ ] Balance maintenance rewards
+- [ ] Recovery performance rewards
+- [ ] Physical realism rewards for reactions
+- [ ] Strategic fighting rewards
+- [ ] Penalties for poor balance
+
+### Training Results
+- [ ] Training completed for at least 4M steps
+- [ ] Knockdown rate decreased from Phase 2
+- [ ] Recovery time improved
+- [ ] Hit reactions look realistic
+- [ ] Previous skills maintained
+- [ ] Model exported as balance_phase3.onnx
+
+### Known Limitations
+- Recovery may be slower than desired (tune PD controller)
+- Some knockdowns may look unnatural (physics tuning)
+- Agents may "tank" hits rather than evade (Phase 4 will add defense)
 
 ---
 
-## Next Phase
+## Next Steps
 
-After Phase 3 completion and verification, proceed to:
-
-**[Phase 4: Special Moves & Judge Scoring](Phase-4.md)**
-
-Implement character signature special moves and comprehensive judge scoring system.
+After Phase 3 completion:
+- **[Phase 4: Defensive Positioning](Phase-4.md)** - Add blocking, dodging, and defensive movement
+- Ensure balance_phase3.onnx saved before proceeding

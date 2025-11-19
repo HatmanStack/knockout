@@ -1,703 +1,724 @@
-# Phase 0: Foundation - Architecture & Design Decisions
+# Phase 0: Architecture & Foundation
 
-## Overview
+## Phase Goal
 
-This phase establishes the architectural foundation for all Core Fighting Mechanics. It defines design patterns, conventions, and technical approaches that will be used throughout Phases 1-5. Read this document thoroughly before beginning implementation.
+Establish architectural decisions, design patterns, and technical foundations for the physics-based AI system. This phase documents **decisions, not implementations** - it serves as a reference for all subsequent phases. By completing this phase, implementers will understand the hybrid AI architecture, ML-Agents integration strategy, observation/action space design, reward structure, and testing patterns.
 
-**Purpose:** Ensure consistency, maintainability, and alignment with existing codebase patterns.
+**Success Criteria:**
+- All architecture decision records (ADRs) documented
+- Integration strategy with existing behavioral AI defined
+- Observation and action spaces designed
+- Reward function structure defined
+- Testing strategy established
+- Shared code patterns documented
+
+**Estimated tokens:** ~15,000
+
+## Prerequisites
+
+- Familiarity with existing Knockout codebase (see README.md)
+- Understanding of current behavioral AI state machine
+- Basic knowledge of Unity ML-Agents concepts
+- Review of Facebook Research paper (recommended but not required)
 
 ---
 
-## Architecture Decisions (ADRs)
+## Architecture Decision Records (ADRs)
 
-### ADR-001: Component-Based Extension of Existing Systems
+### ADR-001: Hybrid AI Architecture (Parallel Systems with Arbiter)
 
-**Decision:** Extend the existing component-based character architecture rather than refactoring it.
+**Context**: Need to integrate physics-based RL agent with existing behavioral state machine AI.
 
-**Rationale:**
-- Current architecture (`CharacterController` + Components) is well-designed and tested
-- New systems integrate cleanly as additional components or extensions
-- Maintains backward compatibility with existing combat/AI systems
-- Reduces risk of breaking existing functionality
+**Decision**: Implement parallel systems where both behavioral AI and RL agent generate inputs, with an arbiter component that blends or selects between them based on context.
 
-**Implementation Pattern:**
+**Rationale**:
+- Allows gradual rollout - behavioral AI continues working while RL is trained
+- Provides graceful fallback if RL agent behaves unexpectedly
+- Enables context-specific routing (e.g., use behavioral AI for long-range spacing, RL for close combat)
+- Supports A/B testing and performance comparison
+- Lower risk than complete replacement
+
+**Architecture**:
 ```
-CharacterController (existing)
-├── CharacterAnimator (existing)
-├── CharacterInput (existing)
-├── CharacterMovement (existing)
-├── CharacterCombat (existing - extend)
-├── CharacterHealth (existing)
-├── CharacterAI (existing)
-├── CharacterStamina (NEW - Phase 1)
-├── CharacterDodge (NEW - Phase 2)
-├── CharacterParry (NEW - Phase 2)
-├── CharacterComboTracker (NEW - Phase 3)
-├── CharacterSpecialMoves (NEW - Phase 4)
-└── CharacterScoring (NEW - Phase 4)
-```
-
-**Consequences:**
-- New components must follow existing lifecycle patterns (`Initialize()`, `Update()`, events)
-- Components communicate via C# events (loose coupling)
-- `CharacterController` orchestrates component initialization
-
----
-
-### ADR-002: ScriptableObject-Driven Configuration
-
-**Decision:** All tunable gameplay values use ScriptableObjects, following the existing `CharacterStats` and `AttackData` patterns.
-
-**Rationale:**
-- Consistent with existing data architecture
-- Enables designer-friendly balancing without code changes
-- Supports character-specific customization
-- Easy to version control and share between characters
-
-**New ScriptableObject Types:**
-- `StaminaData` - Stamina pool size, regen rate, consumption costs, exhaustion penalties
-- `ComboSequenceData` - Predefined combo sequences with timing, damage bonuses, effects
-- `SpecialMoveData` - Special move properties, cooldown, stamina cost, knockdown type
-- `ScoringWeights` - Judge scoring weights for different actions
-
-**File Locations:**
-- Scripts: `Assets/Knockout/Scripts/Characters/Data/`
-- Asset instances: `Assets/Knockout/Data/Characters/[CharacterName]/`
-
----
-
-### ADR-003: State Machine Integration for New Combat States
-
-**Decision:** Extend `CombatStateMachine` with new states rather than creating parallel state management.
-
-**Rationale:**
-- Existing state machine is robust and handles transitions well
-- New states (Dodging, Exhausted, ParryStagger) fit naturally into combat flow
-- Avoids state desynchronization issues
-- Maintains single source of truth for character state
-
-**New Combat States:**
-- `DodgingState` - Active dodge with i-frames (Phase 2)
-- `ExhaustedState` - Stamina depletion penalty (Phase 1)
-- `ParryStaggerState` - Attacker stagger after parry (Phase 2)
-- `SpecialKnockdownState` - Enhanced knockdown from special moves (Phase 4)
-
-**State Transition Rules:**
-- States added to existing state machine graph
-- Follow existing state patterns (enter/exit/update lifecycle)
-- Events fire on state transitions for UI updates
-
----
-
-### ADR-004: Frame-Perfect Timing Using Fixed Update
-
-**Decision:** Critical timing systems (combo windows, parry frames, i-frames) use `FixedUpdate` at 60fps.
-
-**Rationale:**
-- Game already targets 60fps with frame-based attack timing
-- Existing `AttackData` uses frame counts (startup/active/recovery frames)
-- Ensures deterministic, platform-independent timing
-- Simplifies combo timing calculations
-
-**Implementation Guidelines:**
-- Combo timing windows: measured in frames (e.g., 12 frames = 0.2s at 60fps)
-- i-frame duration: frame count (e.g., 8 frames = ~0.133s)
-- Parry window: frame count (e.g., 6 frames = 0.1s)
-- All timing values exposed in ScriptableObjects for tuning
-
-**Frame Rate Constant:**
-```csharp
-public const int TARGET_FRAME_RATE = 60;
-public const float FIXED_DELTA_TIME = 1f / TARGET_FRAME_RATE;
+CharacterAI (main coordinator)
+    ├─ AIStateMachine (existing behavioral AI)
+    │   └─ States: Observe, Approach, Attack, Defend, Retreat
+    ├─ PhysicsAgent (new RL agent, inherits Unity.MLAgents.Agent)
+    │   └─ Observations: physics state, opponent, spatial, game context
+    │   └─ Actions: target poses + parameters
+    └─ AIArbiter (new blending/selection component)
+        └─ Decides which system controls character each frame
 ```
 
+**Consequences**:
+- Additional complexity of arbiter logic
+- Need to design arbiter decision rules
+- Both systems must output compatible action format
+- Requires abstraction layer for actions
+
+**Alternatives Considered**:
+- State machine decides, RL executes: Simpler but limits RL autonomy
+- RL handles everything: Higher risk, loses behavioral AI advantages
+- Layered decision making: More complex, harder to debug
+
 ---
 
-### ADR-005: Event-Driven Communication Between Systems
+### ADR-002: Physics-Enhanced Animation Approach
 
-**Decision:** Components communicate via C# events rather than direct references.
+**Context**: Need to choose level of physics simulation for character control.
 
-**Rationale:**
-- Follows existing codebase pattern (e.g., `OnHealthChanged`, `OnDeath`)
-- Maintains loose coupling between systems
-- UI can subscribe to gameplay events without tight dependencies
-- Easy to add new listeners (e.g., VFX, audio, scoring)
+**Decision**: Use physics-enhanced animations - keep existing animation system but augment with physics forces for realistic momentum, weight transfer, and reactions.
 
-**Event Naming Convention:**
-```csharp
-// Component events
-public event Action<float> OnStaminaChanged;
-public event Action OnStaminaDepleted;
-public event Action<int> OnComboHitLanded;
-public event Action<ComboSequenceData> OnComboSequenceCompleted;
-public event Action<SpecialMoveData> OnSpecialMoveUsed;
-public event Action<ParryData> OnParrySuccessful;
+**Rationale**:
+- Maintains visual polish of hand-authored animations
+- Easier to train than full ragdoll physics
+- Better performance than real-time physics simulation
+- Preserves existing animation assets and systems
+- Allows gradual transition from pure animation to physics-driven
 
-// Scoring events
-public event Action<ScoringAction> OnScoringActionPerformed;
+**Implementation Approach**:
+- Animations play normally via Animator
+- Physics forces applied to Rigidbody during key moments (punches, movement, hits)
+- Blend between animation-driven and physics-driven based on context
+- Use AddForce/AddTorque for physics enhancement
+- ConfigurableJoint or similar for maintaining poses while allowing physics deviation
+
+**Consequences**:
+- Need careful tuning of physics force magnitudes
+- Must synchronize animation state with physics application
+- Potential visual artifacts if forces conflict with animations
+- Requires Rigidbody configuration on character
+
+**Alternatives Considered**:
+- Full ragdoll: Too computationally expensive, hard to train, loses animation polish
+- Pure procedural animation: Would require rebuilding entire animation system
+- High-level actions only: Wouldn't achieve physical realism goal
+
+---
+
+### ADR-003: Unity ML-Agents as RL Framework
+
+**Context**: Need to choose reinforcement learning framework for training physics-based AI.
+
+**Decision**: Use Unity ML-Agents Release 20 with PPO (Proximal Policy Optimization) algorithm.
+
+**Rationale**:
+- Native Unity integration - no need for external simulators
+- Well-documented, actively maintained by Unity Technologies
+- PPO is stable and sample-efficient for continuous control
+- Supports parallel environments for faster local training
+- Good community support and examples
+- Handles observation/action normalization automatically
+- Built-in TensorBoard integration for monitoring
+
+**Configuration**:
+- Algorithm: PPO (default for continuous control)
+- Parallel environments: 8-16 (adjust based on local hardware)
+- Training batch size: 2048-4096
+- Buffer size: 20480
+- Learning rate: 3e-4 (standard PPO learning rate)
+- Discount factor (gamma): 0.99 (long-term reward consideration)
+
+**Consequences**:
+- Python 3.9-3.10 dependency (not compatible with 3.11+)
+- Training tied to Unity Editor (can't train headless easily on Linux)
+- Need to learn ML-Agents API and configuration
+- Model exported as .onnx format
+
+**Alternatives Considered**:
+- Custom RL with PyTorch: More control but significantly more work
+- DeepMind DM Control: Requires porting game to MuJoCo, overkill
+- OpenAI Gym: Doesn't integrate well with Unity
+
+---
+
+### ADR-004: Self-Play Training Strategy
+
+**Context**: Need to determine what opponents the RL agent trains against.
+
+**Decision**: Use self-play training where two copies of the RL agent fight each other, continuously improving through competition.
+
+**Rationale**:
+- Proven effective for competitive two-player scenarios (AlphaGo, OpenAI Five)
+- Creates emergent strategies and counter-strategies
+- No need for hand-crafted opponent behaviors
+- Agent improves indefinitely as it plays against stronger versions of itself
+- Naturally creates diverse experiences
+
+**Implementation**:
+- Training scene with two identical PhysicsAgent instances
+- Each agent controls one character
+- Rewards structured as zero-sum (one wins, other loses)
+- Periodically save checkpoints to track improvement
+- Use symmetric rewards to avoid exploitation
+
+**Consequences**:
+- Initial training may be slow (random agents learning from scratch)
+- Risk of converging to local optima or degenerate strategies
+- Need monitoring to detect training collapse
+- Should validate against behavioral AI periodically
+
+**Alternatives Considered**:
+- Train vs behavioral AI: Limited by behavioral AI skill ceiling
+- Curriculum learning: More complex setup, may not be necessary
+- Hybrid training: Could be added later if self-play issues arise
+
+---
+
+### ADR-005: Observation Space Design
+
+**Context**: Need to define what information the RL agent observes each step.
+
+**Decision**: Comprehensive observation space including self physics state, opponent state, spatial relationships, and game context. All observations normalized to [-1, 1].
+
+**Observation Vector Structure** (approx. 50-80 dimensions):
+
+**Self Physics State** (~20 dimensions):
+- Self position (x, y, z) - normalized to arena bounds
+- Self velocity (x, y, z) - normalized to max speed
+- Self facing direction (forward vector x, z) - unit vector
+- Self angular velocity - normalized
+- Ground contact (boolean as 0/1)
+- Center of mass position relative to feet (x, z) - normalized
+- Current animation state (one-hot encoded: idle, moving, attacking, blocking, hit-stunned, knocked-down)
+- Self momentum magnitude - normalized
+
+**Opponent State** (~15 dimensions):
+- Opponent position (x, y, z) - normalized to arena bounds
+- Opponent velocity (x, y, z) - normalized
+- Opponent facing direction (forward x, z)
+- Opponent animation state (one-hot encoded)
+- Opponent current attack type (one-hot: none, jab, hook, uppercut)
+
+**Spatial Relationships** (~10 dimensions):
+- Distance to opponent - normalized to max arena distance
+- Relative position to opponent (x, y, z) - normalized
+- Angle to opponent (cos, sin of angle)
+- Is opponent in attack range (boolean)
+- Is in opponent's attack range (boolean)
+- Distance to arena boundaries (closest boundary) - normalized
+
+**Game Context** (~10 dimensions):
+- Self health percentage (0-1)
+- Opponent health percentage (0-1)
+- Round number (normalized)
+- Round time remaining (normalized to max round time)
+- Rounds won by self (normalized)
+- Rounds won by opponent (normalized)
+- Time since last hit received (normalized, capped)
+- Time since last hit dealt (normalized, capped)
+
+**Rationale**:
+- Comprehensive enough for strategic decision-making
+- Not too large (keeps training stable)
+- All continuous values for PPO compatibility
+- Normalized for training stability
+- Includes immediate state and context
+
+**Consequences**:
+- ~50-80 dimensional observation vector
+- Need careful normalization implementation
+- Must update observations every decision step
+- Should add observation debugging visualization
+
+---
+
+### ADR-006: Action Space Design (Target Poses + Parameters)
+
+**Context**: Need to define what actions the RL agent can take each step.
+
+**Decision**: Continuous action space with target poses selection and physics parameters. Actions output every 0.1-0.2 seconds (5-10 Hz decision frequency).
+
+**Action Vector Structure** (approx. 10-15 dimensions):
+
+**Movement Actions** (~4 dimensions):
+- Movement direction X (continuous -1 to 1: left/right)
+- Movement direction Z (continuous -1 to 1: back/forward)
+- Movement speed multiplier (continuous 0 to 1)
+- Turn rate (continuous -1 to 1: rotate left/right)
+
+**Attack Actions** (~5 dimensions):
+- Attack type (continuous 0-1, discretized to: none, jab, hook, uppercut)
+- Attack hand (continuous 0-1, discretized to: left, right)
+- Attack force multiplier (continuous 0.5 to 1.5)
+- Attack timing offset (continuous -0.1 to 0.1 seconds)
+- Follow-through intensity (continuous 0 to 1)
+
+**Defensive Actions** (~3 dimensions):
+- Block activation (continuous 0-1, threshold at 0.5)
+- Block height (continuous 0-1: body/head)
+- Evasion direction (continuous -1 to 1: duck/lean/neutral)
+
+**Physics Parameters** (~3 dimensions):
+- Weight shift (continuous -1 to 1: back foot to front foot)
+- Stance width (continuous 0.5 to 1.2: narrow to wide)
+- Center of mass height (continuous 0.7 to 1.0: crouched to upright)
+
+**Rationale**:
+- Continuous actions work well with PPO
+- Parameters give RL control over execution style
+- Target poses maintain animation polish
+- Physics parameters enable realistic weight transfer
+- Enough freedom for emergent behavior
+
+**Consequences**:
+- Need action interpretation layer
+- Must clamp/normalize action outputs
+- Require physics controllers to apply parameters
+- Some actions may conflict (need resolution rules)
+
+---
+
+### ADR-007: Multi-Objective Reward Function
+
+**Context**: Need to define reward signals that encourage desired AI behavior.
+
+**Decision**: Weighted multi-objective reward combining combat effectiveness, physical realism, strategic depth, and player entertainment.
+
+**Reward Components**:
+
+**Combat Effectiveness** (weight: 0.4):
+- +1.0 per hit landed on opponent
+- +0.5 per hit blocked successfully
+- -0.5 per hit received
+- +10.0 for winning round
+- -10.0 for losing round
+- +0.1 per frame in optimal attack range (1.5-2.5 units)
+
+**Physical Realism** (weight: 0.2):
+- +0.01 per frame maintaining balance (center of mass over support base)
+- -0.05 per excessive jerky movement (high acceleration changes)
+- +0.05 for smooth weight transfer during attacks (gradual shift)
+- -0.1 for unnatural poses (IK constraints violated)
+- +0.02 per frame with feet on ground (no floating)
+
+**Strategic Depth** (weight: 0.2):
+- +0.1 for attack variety (using different punch types)
+- +0.05 for spacing control (adjusting distance)
+- +0.1 for defensive reactions (blocking when opponent attacks)
+- -0.05 for spam behavior (same action repeatedly)
+- +0.05 for footwork patterns (circling, strafing)
+
+**Player Entertainment** (weight: 0.2):
+- +0.5 for close-range exchanges (both fighters attacking)
+- +0.1 per dramatic moment (narrow health difference)
+- -0.2 for overly passive play (no actions for extended time)
+- +0.3 for comebacks (dealing damage when low health)
+- +0.1 for round going to time (competitive match)
+
+**Sparse Rewards** (milestone-based):
+- +50.0 for winning match (2 rounds)
+- +5.0 for landing first hit in round
+- +20.0 for knockout victory
+
+**Rationale**:
+- Multiple objectives prevent exploitation of single metric
+- Weights balance competing goals
+- Dense rewards (per-frame) guide learning
+- Sparse rewards provide clear objectives
+- Entertainment rewards ensure fun gameplay
+
+**Consequences**:
+- Complex reward calculation each step
+- Need careful weight tuning through experimentation
+- Risk of reward hacking (need monitoring)
+- Should log individual reward components for debugging
+
+**Implementation Notes**:
+- Calculate reward components separately
+- Log to TensorBoard for analysis
+- Allow runtime weight adjustment for experimentation
+- Consider reward normalization if magnitudes vary greatly
+
+---
+
+### ADR-008: Incremental Phase Rollout
+
+**Context**: System is complex with multiple behaviors to implement and train.
+
+**Decision**: Implement and train behaviors incrementally across phases, with each phase building on previous trained models.
+
+**Phase Sequence**:
+1. **Movement & Footwork**: Train agent to move naturally with physics
+2. **Attack Execution**: Add attacking with physics-based weight transfer
+3. **Hit Reactions & Balance**: Add balance recovery and hit reactions
+4. **Defensive Positioning**: Add blocking and defensive movement
+5. **Integration**: Combine all behaviors with arbiter system
+
+**Transfer Learning Approach**:
+- Each phase starts with previous phase's trained model
+- Freeze learned behaviors while training new ones (optional)
+- Expand observation/action space incrementally
+- Adjust reward weights as capabilities expand
+
+**Rationale**:
+- Easier to debug individual behaviors in isolation
+- Can validate each capability before adding complexity
+- Reduces training time (don't retrain everything each phase)
+- Lower risk of training collapse
+- Provides incremental value
+
+**Consequences**:
+- Need to manage multiple model checkpoints
+- Must carefully design observation/action space to be expandable
+- Each phase requires training time
+- Risk of catastrophic forgetting (new training degrades old behaviors)
+- Should test backward compatibility between phases
+
+---
+
+## Design Patterns and Conventions
+
+### Component Organization
+
+**PhysicsAgent Component** (inherits Unity.MLAgents.Agent):
+```
+Assets/Knockout/Scripts/AI/PhysicsAgent/
+    ├─ PhysicsAgent.cs                    // Main ML-Agents Agent component
+    ├─ PhysicsAgentObservations.cs        // Observation collection logic
+    ├─ PhysicsAgentActions.cs             // Action interpretation logic
+    ├─ PhysicsAgentRewards.cs             // Reward calculation
+    └─ PhysicsControllers/
+        ├─ MovementController.cs          // Physics-based movement
+        ├─ AttackController.cs            // Physics-based attacks
+        ├─ BalanceController.cs           // Balance and recovery
+        └─ DefenseController.cs           // Blocking and dodging
 ```
 
-**Event Flow Example:**
+**Arbiter Component**:
 ```
-Player lands hit in combo
-→ CharacterCombat fires OnHitLanded
-→ CharacterComboTracker listens, increments combo count, fires OnComboHitLanded
-→ ComboUI listens, updates combo counter display
-→ CharacterScoring listens, records hit for judge scoring
+Assets/Knockout/Scripts/AI/
+    └─ AIArbiter.cs                       // Blends behavioral AI + RL agent
 ```
 
----
-
-### ADR-006: Momentum System via Scoring Accumulation
-
-**Decision:** Momentum is implicitly tracked via scoring system rather than explicit meter.
-
-**Rationale:**
-- User requested "momentum-based" combat (offense builds advantage, defense resets)
-- Judge scoring already tracks offensive/defensive actions
-- Avoids adding another explicit resource (stamina already exists)
-- Momentum = accumulated scoring advantage in current round
-
-**Implementation:**
-- `CharacterScoring` tracks all actions (hits, blocks, parries, combos, aggression time)
-- Scoring differential represents current momentum
-- Defensive actions (blocks, parries) don't add opponent momentum
-- Round timer expiry triggers judge decision based on accumulated scores
-
-**Note on Phase 4 Task 13 (MomentumTracker):**
-This task is marked "optional" because momentum is **already implicit** in the scoring differential. Task 13 provides an optional UI visualization (momentum bar) to display this differential visually. The core momentum-based philosophy is implemented through scoring - the UI is just a nice-to-have visualization.
-
----
-
-### ADR-007: Test-Driven Development with Component Isolation
-
-**Decision:** All new components have dedicated EditMode unit tests and PlayMode integration tests.
-
-**Rationale:**
-- Existing codebase has 80%+ test coverage - maintain this standard
-- EditMode tests for data validation and state logic (fast)
-- PlayMode tests for component integration and gameplay flow (comprehensive)
-- Isolated component tests enable confident refactoring
-
-**Test Structure:**
+**Training Infrastructure**:
 ```
-Assets/Knockout/Tests/
-├── EditMode/
-│   ├── Stamina/
-│   │   ├── StaminaDataTests.cs
-│   │   └── StaminaCalculatorTests.cs
-│   ├── Combos/
-│   │   ├── ComboSequenceDataTests.cs
-│   │   └── ComboTimingTests.cs
-│   └── Scoring/
-│       └── ScoringCalculatorTests.cs
-└── PlayMode/
-    ├── Stamina/
-    │   └── CharacterStaminaTests.cs
-    ├── Defense/
-    │   ├── CharacterDodgeTests.cs
-    │   └── CharacterParryTests.cs
-    ├── Combos/
-    │   └── CharacterComboTrackerTests.cs
-    └── Integration/
-        └── CoreMechanicsIntegrationTests.cs
+Assets/Knockout/Scenes/
+    └─ Training/
+        ├─ TrainingArena.unity            // Training scene with parallel envs
+        └─ SelfPlayArena.unity            // Self-play specific setup
+
+Assets/Knockout/Training/
+    └─ Config/
+        ├─ movement_training.yaml         // ML-Agents config for Phase 1
+        ├─ attack_training.yaml           // Phase 2
+        ├─ balance_training.yaml          // Phase 3
+        └─ defense_training.yaml          // Phase 4
 ```
-
-**Test Coverage Targets:**
-- Data classes (ScriptableObjects): 100%
-- Component logic: 85%+
-- Integration scenarios: Key gameplay flows covered
-
----
-
-## Design Decisions
-
-### DD-001: Stamina System Design
-
-**Consumption Model:**
-- Only offensive actions consume stamina (attacks, special moves)
-- Defensive actions free (blocking, dodging, parrying)
-- Movement free (existing movement system unchanged)
-
-**Regeneration Model:**
-- Passive regeneration when not attacking (configurable rate)
-- Regeneration pauses during attack startup/active/recovery frames
-- Full regeneration available during all other states (idle, moving, blocking, dodging)
-
-**Depletion Penalty:**
-- Hitting 0 stamina triggers `ExhaustedState` (brief vulnerable period)
-- Cannot attack while exhausted (defensive actions still available)
-- Stamina regenerates slower during exhaustion
-- Exhaustion clears when stamina reaches threshold (e.g., 25%)
-
-**Tunable Parameters (StaminaData):**
-```csharp
-public float MaxStamina = 100f;
-public float RegenPerSecond = 25f; // ~4s to full recovery
-public float JabCost = 10f;
-public float HookCost = 15f;
-public float UppercutCost = 20f;
-public float SpecialMoveCost = 30f;
-public float ExhaustionDuration = 2f;
-public float ExhaustionRegenMultiplier = 0.5f;
-public float ExhaustionRecoveryThreshold = 25f;
-```
-
----
-
-### DD-002: Combo System Design
-
-**Natural Chaining:**
-- Any attack can chain into any other attack within timing window
-- Timing windows vary by attack type (attack-specific, not universal):
-  - Jab: 18 frames (~0.3s) - fast, forgiving
-  - Hook: 12 frames (~0.2s) - medium
-  - Uppercut: 6 frames (~0.1s) - tight, precise
-- Chain window starts at end of recovery frames
-- Missing window breaks combo (resets to 0)
-
-**Predefined Sequences:**
-- Specific attack sequences unlock bonuses (e.g., Jab-Jab-Hook)
-- Bonuses: damage multiplier, special effects, enhanced knockback
-- Sequences defined per-character via `ComboSequenceData` ScriptableObjects
-- Sequence completion triggers bonus on final hit
-
-**Damage Scaling (Heavy):**
-- 1st hit: 100% damage
-- 2nd hit: 75% damage
-- 3rd hit: 50% damage
-- 4th+ hits: 50% damage (floor)
-- Predefined sequence bonuses apply AFTER scaling (multiplicative)
-
-**Combo Breaking:**
-- Blocked hit stops combo (small window to react)
-- Hit/stagger interrupts combo (mutual trading)
-- Windows are "small" (configurable, ~6-8 frames to block/counter)
-
----
-
-### DD-003: Dodge & Parry Design
-
-**Dodge System:**
-- Directional input: left, right, back (no forward dodge)
-- Quick dash movement (~0.3s total animation)
-- i-frames during first ~40% of dash (~8 frames at 60fps)
-- No stamina cost (defensive action)
-- Animations already exist (left_dodge.fbx, right_dodge.fbx)
-
-**Parry System:**
-- Timing-based perfect block (normal block already exists)
-- Parry window: ~6 frames before hit connects
-- Input: block button pressed at precise moment
-- Success: negates damage, staggers attacker briefly (~0.5s)
-- Counter window: defender can attack during stagger
-- No stamina cost (defensive action)
-
-**Differentiation:**
-- Block: hold button, reduces damage, no counter opportunity
-- Parry: timed press, negates damage, opens counter window
-- Dodge: directional movement, i-frames, repositioning
-
----
-
-### DD-004: Special Moves Design
-
-**Resource Gating:**
-- Each special move has cooldown timer (e.g., 30-60s)
-- AND stamina cost (e.g., 30-50 stamina)
-- Both must be available to use special move
-- Prevents spamming even when cooldown ready
-
-**Character Variety:**
-- Each character has ONE signature special move
-- Special moves use existing attack animations with enhanced properties
-- OR unique animations added per-character later
-- Examples: "Haymaker" (powerful hook variant), "Liver Shot" (body uppercut)
-
-**Special Knockdown:**
-- Special moves can trigger enhanced knockdown state
-- Longer recovery time than normal knockdown
-- Visual distinction (animation, VFX)
-- Scores higher in judge system
-
-**Tunable Parameters (SpecialMoveData):**
-```csharp
-public string SpecialMoveName;
-public AttackData BaseAttackData; // Reference to Jab/Hook/Uppercut as base
-public float DamageMultiplier = 2f;
-public float KnockbackMultiplier = 2f;
-public float CooldownSeconds = 45f;
-public float StaminaCost = 40f;
-public bool TriggersSpecialKnockdown = true;
-```
-
----
-
-### DD-005: Judge Scoring Design
-
-**Tracked Metrics (Comprehensive):**
-- **Offensive Stats:**
-  - Clean hits landed (head/body)
-  - Total damage dealt
-  - Combos completed (2+ hits)
-  - Predefined sequences landed
-  - Special moves landed
-  - Knockdowns inflicted
-
-- **Defensive Stats:**
-  - Hits blocked
-  - Parries successful
-  - Dodges successful (avoided hits)
-
-- **Control Stats:**
-  - Aggression time (time spent in offensive range)
-  - Ring control (time spent in center vs corners)
-  - Stamina management (avg stamina %, exhaustion count)
-
-**Scoring Weights:**
-- Configurable via `ScoringWeights` ScriptableObject
-- Different actions have different point values
-- Example weights:
-  - Clean hit: 1 point
-  - Combo (3+ hits): 3 points
-  - Predefined sequence: 5 points
-  - Special move landed: 8 points
-  - Knockdown: 10 points
-  - Parry: 2 points
-  - Aggression (per second): 0.1 points
-
-**Round Decision:**
-- At round timer expiry (no knockout), compare total scores
-- Higher score wins round
-- Tie: sudden death or round draw (configurable)
-- Scores reset each round (not cumulative across match)
-
----
-
-### DD-006: Animation Availability and Fallbacks
-
-**Confirmed Available Animations:**
-Located in `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/`:
-- **Attack animations:** Left_Jab.fbx, left_hook.fbx, Right_hook.fbx, left_uppercut.fbx, Right_uppercut.fbx
-- **Defensive animations:** Block.fbx, Block_to_idle.fbx, Idle_to_Block.fbx, left_dodge.fbx, right_dodge.fbx
-- **Hit reactions:** hit_by_jab_V1.fbx, hit_by_hook_V1.fbx, Block_straigh_hit_V1.fbx
-- **State animations:** knockout_V1.fbx, Knockouts_Countdown_V1.fbx, Win_V1.fbx, Idle_tired.fbx
-
-**Animation Fallbacks (If Missing):**
-- **Exhaustion animation:** Use `Idle_tired.fbx` or standard `Idle` animation with slower speed
-- **Parry animation:** Reuse `Block.fbx` (differentiation comes from timing/VFX, not animation)
-- **Back dodge animation:** Mirror `left_dodge.fbx` or `right_dodge.fbx` if dedicated back dodge missing
-- **Special knockdown animation:** Reuse `knockout_V1.fbx` with longer duration
-- **Special move animations:** Reuse base attack animations (Hook for Haymaker) with enhanced VFX
-
-**Documentation Requirement:**
-If using fallback animations, note the substitution in the commit message and verification checklist. Example:
-```
-feat(stamina): add ExhaustedState with animation
-
-- Uses Idle_tired.fbx for exhaustion animation
-- Note: No dedicated exhaustion animation, using existing tired idle
-```
-
----
-
-## Shared Patterns & Conventions
 
 ### Naming Conventions
 
-**Scripts:**
-- Components: `Character[Feature].cs` (e.g., `CharacterStamina.cs`)
-- Data: `[Feature]Data.cs` (e.g., `StaminaData.cs`)
-- States: `[Feature]State.cs` (e.g., `ExhaustedState.cs`)
-- UI: `[Feature]UI.cs` (e.g., `StaminaBarUI.cs`)
+- **Classes**: PascalCase (e.g., `PhysicsAgent`, `AIArbiter`)
+- **Private fields**: camelCase with underscore prefix (e.g., `_currentReward`)
+- **Public properties**: PascalCase (e.g., `CurrentState`)
+- **Methods**: PascalCase (e.g., `CollectObservations`, `OnActionReceived`)
+- **Configuration files**: snake_case (e.g., `movement_training.yaml`)
+- **Scene names**: PascalCase (e.g., `TrainingArena`)
 
-**Namespaces:**
-```csharp
-namespace Knockout.Characters.Components
-namespace Knockout.Characters.Data
-namespace Knockout.Combat.States
-namespace Knockout.UI
-namespace Knockout.Systems
-```
+### ML-Agents Override Methods
 
-**Events:**
-- Prefix: `On`
-- Past tense for completed actions: `OnStaminaDepleted`, `OnComboCompleted`
-- Present tense for state changes: `OnStaminaChanging` (rare, prefer past tense)
+All PhysicsAgent implementations must override:
+- `Initialize()`: Setup component references, one-time initialization
+- `CollectObservations(VectorSensor sensor)`: Gather observation vector
+- `OnActionReceived(ActionBuffers actions)`: Interpret and execute actions
+- `OnEpisodeBegin()`: Reset environment for new training episode
+- `Heuristic(in ActionBuffers actionsOut)`: Manual control for testing
 
----
+Optional overrides:
+- `OnEpisodeEnd()`: Cleanup, logging
+- `OnCollisionEnter(Collision)`: Physics event handling
 
-### Component Lifecycle Pattern
+### Testing Patterns
 
-All new components follow this pattern:
+**Unit Tests** (EditMode):
+- Test observation normalization logic
+- Test action interpretation
+- Test reward calculation components
+- Test physics controller math (force calculations, etc.)
 
-```csharp
-public class CharacterFeature : MonoBehaviour
-{
-    [Header("Dependencies")]
-    [SerializeField] private CharacterController characterController;
-    [SerializeField] private FeatureData featureData;
+**Integration Tests** (PlayMode):
+- Test full agent training loop (short run)
+- Test agent inference with trained model
+- Test arbiter blending logic
+- Test interaction with existing character components
 
-    [Header("Runtime State")]
-    private bool isInitialized = false;
-
-    // Events
-    public event Action OnFeatureEvent;
-
-    // Properties
-    public bool IsActive { get; private set; }
-
-    public void Initialize()
-    {
-        if (isInitialized) return;
-
-        // Setup dependencies
-        // Subscribe to events
-        // Initialize state
-
-        isInitialized = true;
-    }
-
-    private void Update()
-    {
-        if (!isInitialized) return;
-        // Frame-rate independent logic
-    }
-
-    private void FixedUpdate()
-    {
-        if (!isInitialized) return;
-        // Fixed-rate timing logic (60fps)
-    }
-
-    private void OnDestroy()
-    {
-        // Unsubscribe from events
-        // Cleanup
-    }
-}
-```
+**Training Validation**:
+- TensorBoard monitoring during training
+- Checkpoint evaluation scripts
+- Performance benchmarks against behavioral AI
+- Visual debugging tools for observations/actions
 
 ---
 
-### ScriptableObject Pattern
+## Shared Utilities
 
-```csharp
-[CreateAssetMenu(fileName = "FeatureData", menuName = "Knockout/Feature Data", order = N)]
-public class FeatureData : ScriptableObject
-{
-    [Header("Identity")]
-    [SerializeField] private string featureName = "Feature";
+### Observation Normalization Helper
 
-    [Header("Configuration")]
-    [SerializeField]
-    [Tooltip("Clear description of this parameter")]
-    private float tunableValue = 10f;
+Implement reusable normalization utilities:
+- `NormalizePosition(Vector3 pos, Bounds areaBounds)`: Normalize to [-1, 1]
+- `NormalizeVelocity(Vector3 vel, float maxSpeed)`: Normalize to [-1, 1]
+- `NormalizeAngle(float angle)`: Convert to cos/sin pair
+- `NormalizeHealth(float health, float maxHealth)`: Normalize to [0, 1]
+- `NormalizeTime(float time, float maxTime)`: Normalize to [0, 1]
 
-    // Public read-only properties
-    public string FeatureName => featureName;
-    public float TunableValue => tunableValue;
+### Action Interpretation Helpers
 
-    // Validation
-    private void OnValidate()
-    {
-        tunableValue = Mathf.Max(0f, tunableValue);
-    }
-}
-```
+- `DiscretizeAction(float continuous, int numOptions)`: Convert continuous to discrete
+- `ClampAction(float action, float min, float max)`: Ensure valid range
+- `ThresholdAction(float action, float threshold)`: Boolean decision
+- `BlendActions(ActionBuffers ai, ActionBuffers rl, float weight)`: Arbiter blending
 
----
+### Physics Controller Utilities
 
-### State Machine State Pattern
-
-```csharp
-public class NewState : CombatState
-{
-    private float stateTimer;
-
-    public override void OnEnter()
-    {
-        base.OnEnter();
-        stateTimer = 0f;
-        // Setup state
-        // Trigger animations
-        // Fire events
-    }
-
-    public override void OnUpdate()
-    {
-        base.OnUpdate();
-        stateTimer += Time.deltaTime;
-        // State logic
-        // Check transition conditions
-    }
-
-    public override void OnFixedUpdate()
-    {
-        base.OnFixedUpdate();
-        // Fixed-rate logic
-    }
-
-    public override void OnExit()
-    {
-        base.OnExit();
-        // Cleanup
-        // Fire exit events
-    }
-}
-```
+- `ApplyWeightShift(Rigidbody rb, float shift)`: Shift center of mass
+- `ApplyAttackForce(Rigidbody rb, AttackData attack, float multiplier)`: Add punch force
+- `MaintainBalance(Rigidbody rb, Vector3 targetCoM)`: PD controller for balance
+- `CalculateCenterOfMass(GameObject character)`: Get current CoM
 
 ---
 
-## Testing Strategy
+## Training Configuration Template
 
-### Unit Testing (EditMode)
+Standard YAML structure for ML-Agents training configs:
 
-**Test Data Classes:**
-- Validate ScriptableObject constraints (OnValidate)
-- Test calculations/formulas
-- Boundary conditions
-- Invalid inputs
+```yaml
+behaviors:
+  PhysicsAgent:
+    trainer_type: ppo
 
-**Example:**
-```csharp
-[Test]
-public void StaminaData_RegenPerSecond_NeverNegative()
-{
-    var data = ScriptableObject.CreateInstance<StaminaData>();
-    // Set via reflection to bypass OnValidate
-    // Verify OnValidate clamps to minimum
-}
+    hyperparameters:
+      batch_size: 2048
+      buffer_size: 20480
+      learning_rate: 3e-4
+      beta: 5.0e-3
+      epsilon: 0.2
+      lambd: 0.95
+      num_epoch: 3
+      learning_rate_schedule: linear
+
+    network_settings:
+      normalize: true
+      hidden_units: 256
+      num_layers: 2
+      vis_encode_type: simple
+
+    reward_signals:
+      extrinsic:
+        gamma: 0.99
+        strength: 1.0
+
+    keep_checkpoints: 5
+    max_steps: 5000000
+    time_horizon: 1000
+    summary_freq: 10000
+
+    self_play:
+      save_steps: 50000
+      team_change: 200000
+      swap_steps: 10000
+      window: 10
+      play_against_latest_model_ratio: 0.5
+      initial_elo: 1200.0
 ```
 
-### Integration Testing (PlayMode)
-
-**Test Component Behavior:**
-- Component initialization
-- Event firing
-- State transitions
-- Integration with existing systems
-
-**Example:**
-```csharp
-[UnityTest]
-public IEnumerator CharacterStamina_ConsumesOnAttack()
-{
-    // Setup character with stamina
-    // Perform attack
-    // Verify stamina decreased
-    // Verify events fired
-    yield return null;
-}
-```
-
-### Performance Testing
-
-**Frame Rate Stability:**
-- New systems must maintain 60fps target
-- No excessive allocations (GC pressure)
-- Use existing performance test patterns
-
-### Test Timing (Hybrid TDD)
-
-**When to Write Tests:**
-- **ScriptableObjects**: Test AFTER implementation (validation-focused, simple data classes)
-- **Component logic**: Test BEFORE when feasible for complex, isolable logic (true TDD)
-- **Integration tests**: Test AFTER phase complete (requires all systems working together)
-
-**Rationale:**
-Unity's component dependencies and MonoBehaviour lifecycle make pure TDD difficult. This hybrid approach balances code quality with practical velocity:
-- Data validation tests are straightforward and fast to write after implementation
-- Complex component logic benefits from test-first design when isolable
-- Integration tests require working systems and are naturally written last
-
-**In Practice:**
-Most tasks will say "write tests" after implementation steps. For complex algorithmic logic (e.g., combo sequence detection, damage scaling calculations), consider writing unit tests first if you can isolate the logic from Unity dependencies.
+Adjust parameters per phase based on complexity.
 
 ---
 
 ## Common Pitfalls to Avoid
 
-### Pitfall 1: Breaking Existing Functionality
+### ML-Agents Specific
 
-**Problem:** New components interfere with existing combat/AI systems
+1. **Forgetting to normalize observations**: Always normalize to [-1, 1] or [0, 1]
+2. **Observation count mismatch**: Ensure `AddObservation()` calls match declared space size
+3. **Action space confusion**: Continuous vs discrete - be consistent
+4. **Not resetting environment**: Always reset positions, health, etc. in `OnEpisodeBegin()`
+5. **Reward scale issues**: Keep rewards roughly in -1 to +1 per step range
+6. **Training too long initially**: Start with short runs to validate setup
 
-**Prevention:**
-- Test with existing gameplay before adding new features
-- Use events rather than direct coupling
-- Verify AI can use new systems (Phase 4+ consideration)
+### Physics Integration
 
----
+1. **Force magnitude too high**: Start small, tune upward
+2. **Conflicting forces**: Animation vs physics - need careful blending
+3. **Rigidbody constraints wrong**: May need to freeze rotation axes
+4. **Time.fixedDeltaTime misalignment**: Use FixedUpdate for physics
+5. **Collision layer issues**: Ensure proper layer configuration
 
-### Pitfall 2: Hardcoded Values
+### Architecture
 
-**Problem:** Magic numbers in code, difficult to balance
-
-**Prevention:**
-- ALL tunable values in ScriptableObjects
-- Constants for system-wide values (TARGET_FRAME_RATE)
-- No hardcoded timing, damage, costs in component code
-
----
-
-### Pitfall 3: Frame-Rate Dependent Timing
-
-**Problem:** Combo windows, i-frames vary on different hardware
-
-**Prevention:**
-- Use `FixedUpdate` for timing-critical systems
-- Frame counts, not time deltas
-- Test at variable frame rates
+1. **Tight coupling**: Keep PhysicsAgent independent of CharacterAI initially
+2. **Premature optimization**: Get it working before optimizing
+3. **Ignoring existing systems**: Leverage CharacterCombat, CharacterMovement patterns
+4. **Not logging enough**: Add extensive debug logging during development
 
 ---
 
-### Pitfall 4: State Desynchronization
+## Testing Strategy
 
-**Problem:** Combo tracker thinks player attacking, state machine says idle
+### Phase 1: Unit Tests (Before Implementation)
 
-**Prevention:**
-- Single source of truth: `CombatStateMachine`
-- Components react to state changes via events
-- Don't duplicate state tracking
+- Test observation normalization math
+- Test action interpretation logic
+- Test reward component calculations
+- Mock ML-Agents components for testing
+
+### Phase 2: Integration Tests (After Implementation)
+
+- Test agent initialization in scene
+- Test observation collection returns correct dimension
+- Test action execution integrates with character systems
+- Test episode reset properly
+
+### Phase 3: Training Validation
+
+- Run 5-minute training to verify no errors
+- Check TensorBoard for reasonable reward trends
+- Manually test agent behavior at checkpoints
+- Compare against behavioral AI baseline
+
+### Phase 4: Performance Testing
+
+- Measure FPS with 8 parallel training environments
+- Measure inference time per decision step
+- Profile memory allocation during training
+- Ensure 60fps in gameplay with trained agent
 
 ---
 
-### Pitfall 5: Event Memory Leaks
+## Commit Message Format
 
-**Problem:** Components subscribe to events but don't unsubscribe
+All commits should follow conventional commits format:
 
-**Prevention:**
-- Always unsubscribe in `OnDestroy()`
-- Pattern: `component.OnEvent += Handler` in `Initialize()`
-- Pattern: `component.OnEvent -= Handler` in `OnDestroy()`
+```
+<type>(<scope>): <brief description>
+
+- Detailed change 1
+- Detailed change 2
+- Detailed change 3
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Types**:
+- `feat`: New feature implementation
+- `fix`: Bug fixes
+- `test`: Adding or updating tests
+- `refactor`: Code restructuring without behavior change
+- `docs`: Documentation updates
+- `chore`: Build, dependencies, tooling
+- `perf`: Performance improvements
+
+**Scopes** for this project:
+- `ml-agents`: ML-Agents setup, training config
+- `physics-agent`: PhysicsAgent component
+- `arbiter`: AIArbiter component
+- `observations`: Observation collection
+- `actions`: Action interpretation
+- `rewards`: Reward function
+- `controllers`: Physics controllers
+- `training`: Training infrastructure
+
+**Example**:
+```
+feat(physics-agent): implement base PhysicsAgent component
+
+- Created PhysicsAgent.cs inheriting from Unity.MLAgents.Agent
+- Implemented CollectObservations with self position and velocity
+- Implemented OnActionReceived with basic movement actions
+- Added OnEpisodeBegin to reset character position
+- Configured behavior spec for continuous action space
+
+🤖 Generated with [Claude Code](https://claude.com/claude.code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ---
 
-## Tech Stack Summary
+## Integration with Existing Codebase
 
-**Unity Systems:**
-- State Machines (existing `CombatStateMachine` + new states)
-- Input System (existing `CharacterInput` + new dodge/parry inputs)
-- Animation System (existing `CharacterAnimator` + new triggers/states)
-- ScriptableObjects (data-driven configuration)
+### CharacterAI Integration
 
-**C# Patterns:**
-- Component-based architecture
-- Event-driven communication
-- State pattern (combat states)
-- ScriptableObject pattern (data)
+The new PhysicsAgent will work **alongside** the existing CharacterAI component:
 
-**Testing:**
-- Unity Test Framework (EditMode + PlayMode)
-- NUnit assertions
-- UnityEngine.TestTools (UnityTest)
+**Existing CharacterAI**:
+- Keeps AIStateMachine with behavioral states
+- Continues making high-level strategic decisions
+- Outputs desired actions (move, attack, block)
+
+**New PhysicsAgent**:
+- Runs in parallel with AIStateMachine
+- Makes physics-aware control decisions
+- Outputs physics-enhanced actions
+
+**AIArbiter**:
+- Receives inputs from both systems
+- Decides which to use or blends them
+- Outputs final commands to CharacterMovement, CharacterCombat
+
+### Data Flow
+
+```
+CharacterAI (coordinator)
+    ↓
+[AIStateMachine] → behavioral actions → [AIArbiter] → final actions
+                                              ↑
+[PhysicsAgent]   → RL actions        →  [AIArbiter]
+                                              ↓
+                                      CharacterMovement
+                                      CharacterCombat
+```
+
+### Abstraction Layer
+
+Create `AIAction` data structure to standardize output from both systems:
+
+```csharp
+public struct AIAction
+{
+    public Vector2 movementInput;      // -1 to 1
+    public float turnRate;             // -1 to 1
+    public AttackType attackType;      // None, Jab, Hook, Uppercut
+    public bool shouldBlock;
+    public float weightShift;          // -1 to 1
+    public Dictionary<string, float> physicsParams;
+}
+```
+
+Both AIStateMachine and PhysicsAgent output `AIAction`, arbiter blends/selects, character components consume.
+
+---
+
+## Performance Considerations
+
+### Training Performance
+
+- **Target**: Train locally with 8-16 parallel environments at 5-10 FPS
+- **Optimization**: Use simple graphics in training scenes (no shadows, low-poly)
+- **Monitoring**: Check CPU/GPU usage, reduce parallelism if overloaded
+- **Checkpointing**: Save every 50k-100k steps for safety
+
+### Inference Performance
+
+- **Target**: Inference adds <1ms overhead per decision step (5-10 Hz)
+- **Model Size**: Keep network small (2 hidden layers, 256 units each)
+- **Optimization**: Use ONNX Runtime's CPU optimizations
+- **Batch Inference**: If multiple agents, batch observations (future optimization)
+
+### Memory Management
+
+- **Training**: Expect ~4-8GB RAM usage with 8 parallel environments
+- **Inference**: Trained model ~1-5MB
+- **Observation Buffer**: Pre-allocate observation arrays, avoid GC
+- **Action Buffer**: Reuse ActionBuffers, don't allocate each frame
 
 ---
 
 ## Next Steps
 
 After reading Phase 0, proceed to:
+- **[Phase 1: Training Infrastructure & Movement](Phase-1.md)** to begin implementation
 
-**[Phase 1: Core Resource Systems](Phase-1.md)**
-
-Start with stamina and enhanced knockdown implementation, the foundation for all other systems.
+Refer back to Phase 0 throughout development for architecture decisions, patterns, and conventions.

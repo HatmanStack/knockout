@@ -1,1155 +1,1086 @@
-# Phase 5: UI Systems & Training Mode
+# Phase 5: Arbiter Integration & Polish
 
 ## Phase Goal
 
-Implement contextual UI elements for all Core Fighting Mechanics systems (stamina, combos, scoring, special moves, defense cooldowns) and create a basic training/practice mode for learning and testing mechanics.
+Integrate the fully-trained physics-based RL agent with the existing behavioral AI through the arbiter system. Create a hybrid AI that leverages the strategic decision-making of the behavioral state machine with the physics-realistic execution of the RL agent. Polish all systems, optimize performance, conduct comprehensive testing, and deliver production-ready physics-based AI opponents.
 
 **Success Criteria:**
-- Contextual UI that appears when relevant (stamina bars, combo counter, scoring display, cooldown indicators)
-- UI integrates with all Phase 1-4 systems via events
-- Basic training mode with dummy AI, unlimited resources toggle, and damage numbers
-- All UI functional and responsive (60fps maintained)
-- UI follows existing project style patterns
-- Training mode accessible and useful for testing
+- AIArbiter component implemented and functional
+- Hybrid AI blends behavioral and RL decisions intelligently
+- Performance optimized for 60fps gameplay
+- Comprehensive testing validates all behaviors
+- AI difficulty levels configurable
+- Production-ready integration with existing game systems
+- Documentation complete for future maintenance
 
-**Estimated Tokens:** ~100,000
-
----
+**Estimated tokens:** ~95,000
 
 ## Prerequisites
 
-**Required Reading:**
-- [Phase 0: Foundation](Phase-0.md) - UI design principles (contextual display)
-- [Phase 1: Core Resource Systems](Phase-1.md) - Stamina events
-- [Phase 2: Advanced Defense](Phase-2.md) - Dodge/parry events
-- [Phase 3: Combo System](Phase-3.md) - Combo events
-- [Phase 4: Special Moves & Judge Scoring](Phase-4.md) - Special move and scoring events
-
-**Existing Systems to Understand:**
-- `HealthBarUI` - Existing UI component pattern (Assets/Knockout/Scripts/UI/HealthBarUI.cs)
-- `RoundUI` - Existing round display (Assets/Knockout/Scripts/UI/RoundUI.cs)
-- All new components from Phases 1-4 (for event subscriptions)
-
-**Environment:**
-- Unity 2021.3.8f1 LTS
-- Unity UI (uGUI)
+- Phase 0 completed (architecture foundation)
+- Phases 1-4 completed (all RL behaviors trained)
+- `defense_phase4.onnx` model available
+- Existing CharacterAI and AIStateMachine systems understood
+- Performance profiling tools available
 
 ---
 
-## Tasks
+## Task 1: Implement AIArbiter Component
 
-### Task 1: Create StaminaBarUI Component
+**Goal:** Create the arbiter system that intelligently blends or selects between behavioral AI and RL agent outputs.
 
-**Goal:** Display character stamina as contextual bar that appears when stamina depleting.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/StaminaBarUI.cs` - UI component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/AIArbiter.cs` (new)
+- `Assets/Knockout/Scripts/AI/AIAction.cs` (new, common action format)
 
 **Prerequisites:**
-- Review `HealthBarUI.cs` for UI component pattern
-- Phase 1 complete (CharacterStamina exists)
+- Understanding of Phase 0 ADR-001 (Hybrid AI Architecture)
+- Both behavioral AI and PhysicsAgent functional independently
 
 **Implementation Steps:**
 
-1. Create `StaminaBarUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: `CharacterStamina`, UI Image for fill bar, UI Text for optional percentage display
-   - Subscribe to `CharacterStamina.OnStaminaChanged` in `Initialize()`
-3. Visual elements:
-   - Background bar (full width)
-   - Fill bar (colored, scaled based on stamina percentage)
-   - Optional: numerical display (e.g., "75/100")
-4. Implement contextual display:
-   - Hide stamina bar when at full (100%)
-   - Show stamina bar when below 100%
-   - Optional: pulse or flash when stamina low (<25%) or depleted
-5. Implement bar update:
-   - On OnStaminaChanged event: update fill bar width/scale
-   - Smooth interpolation (lerp) for visual polish
-6. Color coding:
-   - Green: >50% stamina
-   - Yellow: 25-50% stamina
-   - Red: <25% stamina (danger zone)
-7. Position above or below health bar (non-overlapping)
+1. **Create AIAction data structure**:
+   - Purpose: Common format for both AI systems to output
+   - Fields:
+     ```csharp
+     public struct AIAction
+     {
+         // Movement
+         public Vector2 movementInput;        // -1 to 1
+         public float turnRate;                // -1 to 1
+         public float speedMultiplier;         // 0 to 1
 
-**Design Guidance:**
-- Follow existing HealthBarUI style and positioning
-- Contextual: only visible when relevant (not at full stamina)
-- Smooth updates (lerp) feel more polished than instant jumps
-- Clear visual feedback for stamina state
+         // Combat
+         public AttackType attackType;         // None, Jab, Hook, Uppercut
+         public bool isLeftHand;
+         public float attackForce;             // 0.5 to 1.5
+
+         // Defense
+         public bool shouldBlock;
+         public float guardHeight;             // 0 to 1
+         public float evasionDirection;        // -1 to 1
+
+         // Physics parameters
+         public float weightShift;             // -1 to 1
+         public float stanceWidth;             // 0.5 to 1.2
+         public float centerOfMassHeight;      // 0.7 to 1.0
+
+         // Meta
+         public float confidence;              // 0 to 1, how confident in this action
+         public ActionSource source;           // Behavioral, RL, or Blended
+     }
+
+     public enum ActionSource { Behavioral, RL, Blended }
+     ```
+
+2. **Create AIArbiter class**:
+   - Component requirements: Requires CharacterAI
+   - Serialized fields:
+     - Blending mode (enum: BehavioralOnly, RLOnly, ContextBased, AlwaysBlend)
+     - Blend weight (0-1, if AlwaysBlend mode)
+     - Context thresholds for switching
+     - Debug visualization options
+
+3. **Implement arbiter blending modes**:
+   - **BehavioralOnly**: Always use behavioral AI (for testing/comparison)
+   - **RLOnly**: Always use RL agent (for testing)
+   - **ContextBased**: Switch based on combat context (default, intelligent switching)
+   - **AlwaysBlend**: Always blend both outputs with fixed weight (hybrid)
+
+4. **Implement context-based switching logic**:
+   - Method: `DetermineActiveController(AIContext context)` → ControllerType
+   - Decision rules:
+     - **Use Behavioral AI when**:
+       - Long range (>4 units) - state machine good at spacing
+       - Round just started - behavioral handles approach well
+       - Agent health critical (<20%) - behavioral conservative, safe
+     - **Use RL Agent when**:
+       - Close range combat (<2.5 units) - RL excels at physics-based exchanges
+       - Mid-round active combat - RL handles dynamic combat well
+       - Agent has momentum/advantage - RL aggressive and exploits
+     - **Blend when**:
+       - Mid-range (2.5-4 units) - transition zone
+       - Uncertain situations - combine strengths
+   - Return ControllerType: Behavioral, RL, or Blend
+
+5. **Implement action blending**:
+   - Method: `BlendActions(AIAction behavioralAction, AIAction rlAction, float rlWeight)` → AIAction
+   - Linear interpolation for continuous values:
+     - `blendedAction.movementInput = Lerp(behavioral.movementInput, rl.movementInput, rlWeight)`
+   - Weighted decision for discrete values:
+     - Attacks: Use RL if rlWeight > 0.5, else behavioral
+     - Blocking: OR logic (block if either wants to block)
+   - Physics parameters: Favor RL (more accurate physics control)
+   - Return blended AIAction
+
+6. **Implement action extraction from each system**:
+   - **From Behavioral AI** (AIStateMachine):
+     - Method: `ExtractBehavioralAction(AIState currentState)` → AIAction
+     - Interpret state-specific behaviors:
+       - ObserveState → Neutral movement, strafing
+       - ApproachState → Forward movement
+       - AttackState → Attack action
+       - DefendState → Blocking action
+       - RetreatState → Backward movement
+     - Convert to AIAction format
+   - **From RL Agent** (PhysicsAgent):
+     - Method: `ExtractRLAction()` → AIAction
+     - Read interpreted actions from PhysicsAgent properties
+     - Already in continuous format, map to AIAction
+     - Include confidence from action magnitudes
+
+7. **Implement action execution**:
+   - Method: `ExecuteAction(AIAction action)`
+   - Route to character components:
+     - Movement → CharacterMovement.SetMovementInput()
+     - Attacks → CharacterCombat.ExecuteAttack()
+     - Blocking → CharacterCombat.StartBlocking()/StopBlocking()
+     - Physics params → Physics controllers
+   - Single execution point for both AI systems
+
+8. **Integrate with CharacterAI**:
+   - Modify CharacterAI.Update():
+     - Get action from both AIStateMachine and PhysicsAgent
+     - Pass both to AIArbiter
+     - Get final blended/selected action
+     - Execute via character components
+   - Alternatively, make AIArbiter the main coordinator (refactor CharacterAI)
+
+9. **Add arbiter debugging**:
+   - Visualize current controller (behavioral/RL/blend)
+   - Log switching events
+   - Display blend weight in real-time
+   - Show both actions side-by-side for comparison
+   - Draw different colored gizmos for each source
+
+10. **Handle edge cases**:
+    - If PhysicsAgent not present, fall back to behavioral only
+    - If behavioral AI disabled, fall back to RL only
+    - Smooth transitions between controllers (avoid jitter)
+    - Ensure consistent behavior across frames
 
 **Verification Checklist:**
-- [ ] Stamina bar displays correctly
-- [ ] Bar updates on stamina changes
-- [ ] Contextual display (hidden at full)
-- [ ] Color coding reflects stamina state
-- [ ] Smooth visual updates
+- [ ] AIAction struct defined and used by both systems
+- [ ] AIArbiter component compiles and attaches to character
+- [ ] Blending modes implemented and selectable
+- [ ] Context-based switching logic functional
+- [ ] Action blending produces smooth behavior
+- [ ] Action extraction from both systems works
+- [ ] Action execution routes correctly
+- [ ] Integration with CharacterAI complete
+- [ ] Debug visualization shows active controller
+- [ ] Edge cases handled gracefully
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/UI/StaminaBarUITests.cs`
-
-Test cases:
-- Bar hidden when stamina at 100%
-- Bar appears when stamina depletes
-- Bar fill updates correctly on stamina change
-- Color changes based on stamina percentage
-
-Manual testing:
-- Enter play mode
-- Perform attacks to deplete stamina
-- Verify bar appears and updates
-- Check color changes
+- Manual testing with different blending modes:
+  - BehavioralOnly: Verify acts like Phase 0 AI
+  - RLOnly: Verify acts like trained RL agent
+  - ContextBased: Verify switches at appropriate ranges/contexts
+  - AlwaysBlend: Verify smooth combination of both
+- Test transitions between controllers for smoothness
+- Verify action execution produces expected character behavior
 
 **Commit Message Template:**
 ```
-feat(ui): implement StaminaBarUI component
+feat(arbiter): implement AIArbiter for hybrid AI system
 
-- Display stamina as contextual bar
-- Color-coded based on stamina level
-- Hidden when at full stamina
-- Smooth visual updates
+- Created AIAction struct for common action format
+- Implemented AIArbiter component with multiple blending modes
+- Implemented context-based switching logic (range, health, combat state)
+- Implemented action blending for smooth hybrid behavior
+- Extracted actions from both behavioral AI and RL agent
+- Implemented unified action execution through character components
+- Integrated AIArbiter with CharacterAI coordinator
+- Added debug visualization for active controller and blend weight
+- Handled edge cases (missing components, smooth transitions)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~7,000
+**Estimated tokens:** ~15,000
 
 ---
 
-### Task 2: Create ComboCounterUI Component
+## Task 2: Optimize Performance
 
-**Goal:** Display combo counter that appears during combos and shows hit count.
+**Goal:** Ensure the hybrid AI system runs efficiently at 60fps in gameplay.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/ComboCounterUI.cs` - UI component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (optimize)
+- `Assets/Knockout/Scripts/AI/AIArbiter.cs` (optimize)
+- Performance profiling results document
 
 **Prerequisites:**
-- Phase 3 complete (CharacterComboTracker exists)
+- Task 1 completed (arbiter functional)
+- Unity Profiler familiarity
 
 **Implementation Steps:**
 
-1. Create `ComboCounterUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: `CharacterComboTracker`, UI Text for combo count, UI Text for combo label (optional)
-   - Subscribe to combo events: `OnComboHitLanded`, `OnComboEnded`, `OnComboSequenceCompleted`
-3. Visual elements:
-   - Combo count text (e.g., "3 HIT COMBO!")
-   - Optional: sequence name when predefined sequence completed (e.g., "1-2-HOOK!")
-4. Implement contextual display:
-   - Hide when no combo active
-   - Show when combo count >= 2
-   - Scale/pulse animation on each hit (visual feedback)
-   - Fade out when combo ends
-5. Implement combo display:
-   - On OnComboHitLanded: update count text, play hit animation
-   - On OnComboSequenceCompleted: briefly display sequence name with special effect
-   - On OnComboEnded: fade out and hide
-6. Positioning: center-screen or upper area (highly visible during combo)
-7. Visual polish:
-   - Increase font size with combo count (bigger for longer combos)
-   - Flash or pulse on sequence completion
-   - Sound effect hooks (events for audio)
+1. **Profile baseline performance**:
+   - Open Unity Profiler (Window > Analysis > Profiler)
+   - Run gameplay scene with hybrid AI
+   - Record FPS and identify bottlenecks:
+     - CPU time per frame
+     - GC allocations
+     - Physics simulation time
+     - AI decision time
+     - Rendering time
+   - Document baseline metrics
 
-**Design Guidance:**
-- Combos are exciting - UI should reflect that (bold, animated)
-- Contextual: only appears during active combo
-- Sequence completion is special (distinct visual/audio cue)
-- Clear, readable at a glance
+2. **Optimize PhysicsAgent inference**:
+   - **Reduce decision frequency** if needed:
+     - Currently 10Hz (every 0.1s), test 5Hz (every 0.2s)
+     - Higher frequency may not improve quality
+   - **Batch observations** if multiple agents:
+     - Collect observations once, reuse across agents
+     - Unity ML-Agents supports batched inference
+   - **Optimize observation collection**:
+     - Cache frequently accessed components
+     - Avoid GetComponent calls in CollectObservations
+     - Pre-compute static values
+   - **Use ONNX Runtime optimizations**:
+     - Ensure using CPU optimizations
+     - Consider quantization if model too large (advanced)
+
+3. **Optimize AIArbiter execution**:
+   - Cache component references (don't GetComponent every frame)
+   - Minimize garbage collection:
+     - Reuse AIAction struct (don't allocate new each frame)
+     - Avoid LINQ queries
+     - Use object pooling for temporary structures
+   - Optimize blending calculations:
+     - Pre-compute blend weights if constant
+     - Use Vector2.LerpUnclamped for performance (clamp separately if needed)
+
+4. **Optimize physics controllers**:
+   - Ensure physics calculations in FixedUpdate only (not Update)
+   - Minimize force applications per frame
+   - Use simpler physics when possible:
+     - Rigidbody.AddForce instead of complex joint manipulation
+   - Reduce raycast frequency:
+     - Don't raycast every frame for ground detection
+     - Cache results for a few frames
+   - Adjust Fixed Timestep if needed (Edit > Project Settings > Time):
+     - Default 0.02 (50Hz), can reduce to 0.033 (30Hz) for better CPU performance
+
+5. **Optimize behavioral AI**:
+   - Already optimized in existing system, but verify:
+     - State transitions not happening every frame unnecessarily
+     - Decision timer working (not making decisions every frame)
+
+6. **Reduce observation/action space if needed**:
+   - If inference is slow, consider:
+     - Removing less important observations (requires retraining)
+     - Simplifying neural network (fewer layers/units, requires retraining)
+   - This is last resort if other optimizations insufficient
+
+7. **Optimize training scene for inference** (if using for gameplay):
+   - Disable all training-specific components
+   - Remove unnecessary parallel environments
+   - Optimize graphics (LOD, culling)
+
+8. **Measure optimized performance**:
+   - Re-run profiler after optimizations
+   - Target: 60fps (16.67ms per frame) with single AI agent
+   - AI decision time should be <2ms per frame
+   - No GC allocations in steady state (or minimal <1KB/frame)
+   - Document improvements
+
+9. **Test with multiple agents**:
+   - Spawn 2, 4, 8 AI agents in scene
+   - Measure FPS degradation
+   - Optimize further if multi-agent performance poor
+   - Consider LOD for distant AI (simpler decision making)
+
+10. **Platform-specific optimizations**:
+    - Test on target platform (PC/Mac/Linux)
+    - Adjust quality settings for platform
+    - Consider lower physics update rate on lower-end hardware
 
 **Verification Checklist:**
-- [ ] Combo counter appears on combo start
-- [ ] Count updates on each hit
-- [ ] Sequence name displays on completion
-- [ ] Counter fades out on combo end
-- [ ] Animations smooth and polished
+- [ ] Profiling completed and bottlenecks identified
+- [ ] FPS maintained at 60fps with hybrid AI
+- [ ] AI decision time <2ms per frame
+- [ ] GC allocations minimized (<1KB/frame)
+- [ ] Physics simulation within budget
+- [ ] Multiple agents performant (at least 2 at 60fps)
+- [ ] Optimizations documented
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/UI/ComboCounterUITests.cs`
-
-Test cases:
-- Counter hidden when no combo
-- Counter appears when combo >= 2 hits
-- Count updates correctly on each hit
-- Counter hides when combo ends
-- Sequence name displays on completion
-
-Manual testing:
-- Execute combos in play mode
-- Verify counter appears and updates
-- Check animations and visibility
+- Performance testing in gameplay scene:
+  - Measure FPS over 5 minute gameplay session
+  - Check for frame spikes or hitches
+  - Verify consistent frame timing
+- Stress test with multiple agents
+- Test on minimum spec hardware (if available)
 
 **Commit Message Template:**
 ```
-feat(ui): implement ComboCounterUI component
+perf(ai): optimize hybrid AI system performance
 
-- Display hit count during active combos
-- Show sequence name on completion
-- Contextual appearance with animations
-- Visual feedback for combo progression
+- Profiled AI system and identified bottlenecks
+- Reduced PhysicsAgent decision frequency to 5Hz (from 10Hz)
+- Cached component references in AIArbiter and PhysicsAgent
+- Minimized GC allocations (removed LINQ, reused structures)
+- Optimized physics controller raycast frequency
+- Adjusted Fixed Timestep to 0.025 for better CPU performance
+- Achieved consistent 60fps with hybrid AI agent
+- AI decision time reduced to <1.5ms per frame
+- GC allocations reduced to <0.5KB/frame
+- Documented performance improvements and benchmarks
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~8,000
+**Estimated tokens:** ~12,000
 
 ---
 
-### Task 3: Create SpecialMoveCooldownUI Component
+## Task 3: Implement AI Difficulty Levels
 
-**Goal:** Display special move cooldown indicator showing readiness state.
+**Goal:** Create configurable difficulty levels that adjust AI behavior for different player skill levels.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/SpecialMoveCooldownUI.cs` - UI component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/AIDifficultySettings.cs` (new ScriptableObject)
+- `Assets/Knockout/Scripts/AI/CharacterAI.cs` (modify to use difficulty)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify for difficulty)
 
 **Prerequisites:**
-- Phase 4 complete (CharacterSpecialMoves exists)
+- Task 1 completed (arbiter functional)
 
 **Implementation Steps:**
 
-1. Create `SpecialMoveCooldownUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: `CharacterSpecialMoves`, UI Image for cooldown fill, UI Image for special move icon
-   - Subscribe to events: `OnSpecialMoveUsed`, `OnSpecialMoveReady`
-3. Visual elements:
-   - Special move icon (fixed image)
-   - Cooldown overlay (radial fill or progress bar)
-   - Optional: numerical cooldown timer (e.g., "30s")
-   - "Ready" indicator (glow, color change, or text)
-4. Implement cooldown display:
-   - While on cooldown: show fill overlay draining (progress from full to empty)
-   - Update every frame: query `CharacterSpecialMoves.CooldownProgress`
-   - When ready: remove overlay, show "Ready" indicator
-5. Implement contextual behavior:
-   - Dim icon when insufficient stamina (even if cooldown ready)
-   - Flash or pulse when both cooldown and stamina ready
-6. Positioning: HUD corner or near character portrait
-7. Tooltip or label: special move name
+1. **Create AIDifficultySettings ScriptableObject**:
+   - Defines parameters for each difficulty level
+   - Fields:
+     ```csharp
+     [CreateAssetMenu(fileName = "AIDifficulty", menuName = "Knockout/AI Difficulty")]
+     public class AIDifficultySettings : ScriptableObject
+     {
+         // Decision making
+         public float reactionTime;              // Seconds delay before reacting
+         public float attackAccuracy;            // 0-1, chance of optimal attack
+         public float blockAccuracy;             // 0-1, chance of blocking correctly
 
-**Design Guidance:**
-- Clear at-a-glance readiness check
-- Cooldown visual (radial fill) intuitive and common in games
-- Dual-gating feedback: cooldown AND stamina must be ready
-- Special moves are important - UI should emphasize readiness
+         // Behavioral weights
+         public float aggressionLevel;           // 0-1, affects attack frequency
+         public float defensivenessLevel;        // 0-1, affects blocking frequency
+
+         // Arbiter settings
+         public float rlAgentWeight;             // 0-1, how much to use RL vs behavioral
+         public BlendMode arbiterMode;           // Blending mode for this difficulty
+
+         // Physics parameters
+         public float attackForceVariance;       // Randomness in attack strength
+         public float movementPrecision;         // 0-1, how accurately AI moves
+
+         // Mistakes
+         public float mistakeProbability;        // 0-1, chance of suboptimal decision
+         public float whiffProbability;          // 0-1, chance of missing on purpose
+     }
+     ```
+
+2. **Create preset difficulty levels**:
+   - **Easy**:
+     - reactionTime: 0.5s (slow reactions)
+     - attackAccuracy: 0.4 (misses often)
+     - blockAccuracy: 0.3 (blocks poorly)
+     - aggressionLevel: 0.3 (passive)
+     - rlAgentWeight: 0.3 (mostly behavioral, less skilled)
+     - mistakeProbability: 0.3 (makes mistakes)
+   - **Medium**:
+     - reactionTime: 0.3s
+     - attackAccuracy: 0.6
+     - blockAccuracy: 0.5
+     - aggressionLevel: 0.5 (balanced)
+     - rlAgentWeight: 0.5 (balanced blend)
+     - mistakeProbability: 0.15
+   - **Hard**:
+     - reactionTime: 0.15s
+     - attackAccuracy: 0.8
+     - blockAccuracy: 0.7
+     - aggressionLevel: 0.7 (aggressive)
+     - rlAgentWeight: 0.7 (favors RL, more skilled)
+     - mistakeProbability: 0.05
+   - **Expert**:
+     - reactionTime: 0.05s (near-instant)
+     - attackAccuracy: 0.95
+     - blockAccuracy: 0.9
+     - aggressionLevel: 0.8
+     - rlAgentWeight: 1.0 (pure RL, full skill)
+     - mistakeProbability: 0.0 (no mistakes)
+
+3. **Integrate difficulty into CharacterAI**:
+   - Add serialized field: `public AIDifficultySettings difficulty;`
+   - In Update, apply reaction time delay:
+     - Add random delay based on difficulty.reactionTime
+     - Buffer decisions for delayed execution
+   - Pass difficulty settings to AIArbiter for blend weight
+
+4. **Integrate difficulty into PhysicsAgent**:
+   - Add noise to actions based on difficulty:
+     - Method: `ApplyDifficultyNoise(ActionBuffers actions)`
+     - Reduce precision of actions for lower difficulties
+     - Add random perturbations to movements/attacks
+   - Adjust inference confidence based on difficulty
+   - Intentionally make mistakes at lower difficulties:
+     - Random chance to choose suboptimal action
+     - Simulate human errors (attack when should block, etc.)
+
+5. **Integrate difficulty into AIArbiter**:
+   - Use difficulty.rlAgentWeight as blend weight if in AlwaysBlend mode
+   - Adjust context switching thresholds based on difficulty:
+     - Easy: Prefer behavioral (simpler, less skilled)
+     - Hard/Expert: Prefer RL (complex, more skilled)
+
+6. **Implement attack accuracy**:
+   - In attack execution, apply accuracy:
+     - Roll random value, if > difficulty.attackAccuracy:
+       - Add aiming error to attack direction
+       - Or skip attack (simulate whiff)
+   - Makes lower difficulties miss more often
+
+7. **Implement block accuracy**:
+   - In block execution, apply accuracy:
+     - Roll random value, if > difficulty.blockAccuracy:
+       - Block late (don't block in time)
+       - Or block with wrong guard height
+   - Makes lower difficulties block poorly
+
+8. **Add difficulty selection UI** (optional, can be menu-based):
+   - Create simple UI for selecting difficulty
+   - Or expose in inspector for testing
+   - Apply selected difficulty to AI characters
+
+9. **Test each difficulty level**:
+   - Play against each difficulty
+   - Verify appropriate challenge level
+   - Tune parameters if too easy/hard
 
 **Verification Checklist:**
-- [ ] Cooldown overlay displays correctly
-- [ ] Overlay updates smoothly (radial fill or progress bar)
-- [ ] "Ready" indicator appears when cooldown complete
-- [ ] Icon dims when stamina insufficient
-- [ ] Visual feedback clear and intuitive
+- [ ] AIDifficultySettings ScriptableObject created
+- [ ] Preset difficulties created (Easy, Medium, Hard, Expert)
+- [ ] Difficulty integrated into CharacterAI
+- [ ] Reaction time delays applied correctly
+- [ ] Attack and block accuracy implemented
+- [ ] Difficulty affects arbiter blending
+- [ ] Noise added to RL actions for lower difficulties
+- [ ] Each difficulty feels appropriately challenging
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/UI/SpecialMoveCooldownUITests.cs`
-
-Test cases:
-- Cooldown overlay fills on special move use
-- Overlay updates based on CooldownProgress
-- "Ready" indicator appears when cooldown complete
-- Icon dims when stamina insufficient
-
-Manual testing:
-- Use special move in play mode
-- Watch cooldown overlay progress
-- Verify "Ready" state at completion
+- Manual playtesting against each difficulty:
+  - Easy: Should be beatable by novice player
+  - Medium: Balanced challenge for average player
+  - Hard: Challenging for experienced player
+  - Expert: Very difficult, near-optimal play
+- Gather feedback from multiple testers if possible
 
 **Commit Message Template:**
 ```
-feat(ui): implement SpecialMoveCooldownUI component
+feat(ai): implement configurable difficulty levels
 
-- Display special move cooldown progress
-- Show readiness indicator when available
-- Dim icon when stamina insufficient
-- Clear dual-gating feedback
+- Created AIDifficultySettings ScriptableObject
+- Implemented preset difficulties (Easy, Medium, Hard, Expert)
+- Integrated difficulty into CharacterAI with reaction delays
+- Added difficulty-based noise to PhysicsAgent actions
+- Implemented attack and block accuracy modulation
+- Configured AIArbiter blend weight based on difficulty
+- Added intentional mistake simulation for lower difficulties
+- Created and tuned all difficulty presets
+- Tested and balanced each difficulty level for player experience
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~7,000
+**Estimated tokens:** ~12,000
 
 ---
 
-### Task 4: Create ScoringDisplayUI Component
+## Task 4: Comprehensive Testing
 
-**Goal:** Display current score and scoring breakdown (contextual at round end).
+**Goal:** Thoroughly test the complete physics-based AI system to identify and fix any issues.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/ScoringDisplayUI.cs` - UI component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Tests/PlayMode/PhysicsAIIntegrationTests.cs` (new)
+- `docs/TESTING_REPORT.md` (new, test results)
 
 **Prerequisites:**
-- Phase 4 complete (CharacterScoring exists)
+- All previous Phase 5 tasks completed
+- Unity Test Framework familiar
 
 **Implementation Steps:**
 
-1. Create `ScoringDisplayUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: Both `CharacterScoring` components (player and opponent), `RoundManager`
-   - Subscribe to events: `CharacterScoring.OnScoreChanged`, `RoundManager.OnJudgeDecision`
-3. Visual elements:
-   - Real-time score display (optional, top HUD): "Score: 45" for each character
-   - Round-end scoring breakdown (panel):
-     - Both characters' scores side-by-side
-     - Breakdown of stats (hits, combos, parries, etc.)
-     - Winner announcement
-     - "JUDGE DECISION" header
-4. Implement contextual display:
-   - Real-time scores: always visible (or hidden during active combat, player preference)
-   - Breakdown panel: only appears on judge decision (round timer expiry)
-   - Breakdown shows for 3-5 seconds then fades
-5. Implement breakdown content:
-   - List key stats for both characters:
-     - Clean Hits: X vs Y
-     - Combos: X vs Y
-     - Parries: X vs Y
-     - Special Moves: X vs Y
-     - Total Score: X vs Y
-   - Highlight winner's score (bold, color)
-6. Positioning: center-screen overlay for breakdown, HUD for real-time scores
+1. **Create integration test suite**:
+   - Test file: `PhysicsAIIntegrationTests.cs`
+   - Use Unity Test Framework PlayMode tests
+   - Test end-to-end behavior of hybrid AI
 
-**Design Guidance:**
-- Breakdown provides transparency (why did I win/lose?)
-- Real-time scores optional (can be distracting, but informative)
-- Clear winner indication
-- Breakdown should be readable but not block gameplay too long
+2. **Test arbiter functionality**:
+   - Test: Arbiter switches between controllers correctly
+   - Test: Action blending produces valid outputs
+   - Test: Edge cases handled (missing RL model, disabled behavioral)
+   - Test: Smooth transitions between controllers
+
+3. **Test all combat behaviors**:
+   - Test: AI moves naturally and maintains fighting range
+   - Test: AI throws attacks when in range
+   - Test: AI blocks incoming attacks
+   - Test: AI recovers from hits and regains balance
+   - Test: AI uses defensive footwork when pressured
+   - Test: AI demonstrates variety (multiple attack types, varied movement)
+
+4. **Test difficulty levels**:
+   - Test: Easy difficulty is beatable
+   - Test: Hard difficulty is challenging
+   - Test: Reaction time differences observable
+   - Test: Accuracy differences affect performance
+
+5. **Test edge cases and stress scenarios**:
+   - Test: AI behavior at arena boundaries
+   - Test: AI behavior when knocked down
+   - Test: AI behavior at low health
+   - Test: AI behavior in round transitions
+   - Test: Multiple AI agents in scene simultaneously
+   - Test: AI behavior when player doesn't attack (AI takes initiative)
+
+6. **Performance testing**:
+   - Test: FPS remains stable at 60 during combat
+   - Test: No memory leaks over extended gameplay
+   - Test: GC allocations minimal
+   - Test: Loading trained model doesn't cause hitches
+
+7. **Regression testing**:
+   - Test: Existing gameplay systems still work (round management, health, etc.)
+   - Test: Player controls unaffected
+   - Test: Behavioral AI still functions independently (if using arbiter in BehavioralOnly mode)
+
+8. **User acceptance testing** (manual):
+   - Playtest sessions with varied skill players
+   - Gather feedback on:
+     - AI difficulty appropriateness
+     - AI behavior realism
+     - Fun factor (is AI engaging to fight?)
+     - Any exploits or cheese strategies
+   - Document feedback in `TESTING_REPORT.md`
+
+9. **Bug fixing**:
+   - Fix any issues discovered during testing
+   - Re-test after fixes
+   - Document known issues if unfixable
+
+10. **Create test report**:
+    - Document all tests performed
+    - List pass/fail results
+    - Include performance metrics
+    - Note any known limitations
+    - Provide recommendations for future improvements
 
 **Verification Checklist:**
-- [ ] Real-time scores display correctly
-- [ ] Breakdown appears on judge decision
-- [ ] Breakdown shows accurate stats
-- [ ] Winner highlighted clearly
-- [ ] Breakdown fades after timeout
+- [ ] Integration test suite created and passing
+- [ ] All combat behaviors tested and verified
+- [ ] Difficulty levels tested and appropriately challenging
+- [ ] Edge cases tested and handled
+- [ ] Performance tests passing (60fps maintained)
+- [ ] No memory leaks or GC pressure
+- [ ] Regression tests passing
+- [ ] User acceptance testing completed
+- [ ] Bugs fixed or documented
+- [ ] Test report created
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/UI/ScoringDisplayUITests.cs`
-
-Test cases:
-- Real-time scores update on score changes
-- Breakdown appears on OnJudgeDecision event
-- Breakdown displays correct stats
-- Winner highlighted
-- Breakdown auto-hides after duration
-
-Manual testing:
-- Let round timer expire
-- Verify judge decision breakdown appears
-- Check stats accuracy
-- Confirm winner indicated
+- Run all automated tests in Test Runner
+- Conduct manual playtest sessions (at least 1 hour of varied gameplay)
+- Test on target hardware/platform
+- Verify all success criteria from Phase 5 goal
 
 **Commit Message Template:**
 ```
-feat(ui): implement ScoringDisplayUI component
+test(ai): comprehensive integration testing of physics-based AI
 
-- Display real-time scores during round
-- Show scoring breakdown on judge decision
-- Highlight winner and key stats
-- Contextual appearance at round end
+- Created PhysicsAIIntegrationTests suite with 25+ tests
+- Tested arbiter switching and blending logic
+- Tested all combat behaviors (movement, attacks, defense, recovery)
+- Tested difficulty levels for appropriate challenge
+- Tested edge cases and stress scenarios
+- Performance tests confirm 60fps with no memory leaks
+- Regression tests verify existing systems unaffected
+- Conducted user acceptance testing with 5 playtesters
+- Fixed 12 bugs discovered during testing
+- Documented results and recommendations in TESTING_REPORT.md
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~9,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Create RoundTimerUI Component
+## Task 5: Documentation and Finalization
 
-**Goal:** Display round timer counting down with visual warnings.
+**Goal:** Create comprehensive documentation for the physics-based AI system for future maintenance and extension.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/RoundTimerUI.cs` - UI component class
+**Files to Modify/Create:**
+- `docs/PHYSICS_AI_GUIDE.md` (new, complete guide)
+- `docs/PHYSICS_AI_ARCHITECTURE.md` (new, architecture details)
+- `docs/TROUBLESHOOTING.md` (new or update existing)
+- `README.md` (update with physics AI info)
 
 **Prerequisites:**
-- Phase 4 complete (RoundManager with timer)
+- All previous tasks completed
+- System fully tested and working
 
 **Implementation Steps:**
 
-1. Create `RoundTimerUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: `RoundManager`
-   - Subscribe to: `RoundManager.OnRoundTimeChanged`
-3. Visual elements:
-   - Timer text (e.g., "2:45" for 2 minutes 45 seconds)
-   - Optional: circular progress bar around timer
-   - Warning indicator when time low (<30s)
-4. Implement timer display:
-   - Format time as MM:SS
-   - Update on OnRoundTimeChanged event
-   - Flash or pulse when time low
-   - Color change: white → yellow → red as time expires
-5. Positioning: top-center HUD (common in fighting games)
-6. Visual warnings:
-   - <30s: yellow text, pulse animation
-   - <10s: red text, faster pulse, countdown beeps (audio hook)
+1. **Create PHYSICS_AI_GUIDE.md**:
+   - User-facing documentation
+   - Sections:
+     - **Overview**: What is the physics-based AI system
+     - **Quick Start**: How to add physics AI to a character
+     - **Difficulty Levels**: How to configure and use
+     - **Customization**: Tuning parameters for different behavior
+     - **Training**: How to retrain models if needed
+     - **Performance**: Optimization tips
+     - **FAQ**: Common questions
 
-**Design Guidance:**
-- Timer should be always visible during round
-- Clear time remaining at a glance
-- Visual/audio warnings for urgency
-- Standard fighting game timer format (MM:SS)
+2. **Create PHYSICS_AI_ARCHITECTURE.md**:
+   - Developer-facing technical documentation
+   - Sections:
+     - **Architecture Overview**: Component diagram, data flow
+     - **Components**: Detailed description of each component
+       - PhysicsAgent
+       - AIArbiter
+       - Physics Controllers (Movement, Attack, Balance, Defense)
+       - Observation and Action spaces
+       - Reward functions
+     - **Integration Points**: How system integrates with existing game
+     - **ML-Agents Details**: Training configuration, model details
+     - **Extension Guide**: How to add new behaviors
+     - **Design Decisions**: Reference to Phase 0 ADRs
+
+3. **Create TROUBLESHOOTING.md**:
+   - Common issues and solutions
+   - Sections:
+     - **Training Issues**: Model not learning, training unstable, etc.
+     - **Runtime Issues**: AI behaving strangely, performance problems, etc.
+     - **Integration Issues**: Conflicts with existing systems
+     - **Model Issues**: Loading failures, inference errors
+   - For each issue:
+     - Symptoms
+     - Likely causes
+     - Solutions
+     - Prevention
+
+4. **Update main README.md**:
+   - Add section on physics-based AI
+   - Link to detailed docs
+   - Update feature list
+   - Update architecture diagram if present
+   - Update future enhancements (remove physics AI from future, mark as complete)
+
+5. **Document code with XML comments**:
+   - Ensure all public classes have XML documentation:
+     - `<summary>` describing purpose
+     - `<param>` for method parameters
+     - `<returns>` for return values
+     - `<remarks>` for important notes
+   - Example:
+     ```csharp
+     /// <summary>
+     /// Blends actions from behavioral AI and RL agent based on context.
+     /// </summary>
+     /// <param name="behavioralAction">Action from behavioral state machine</param>
+     /// <param name="rlAction">Action from physics-based RL agent</param>
+     /// <param name="weight">Blend weight (0=behavioral, 1=RL)</param>
+     /// <returns>Blended action combining both inputs</returns>
+     /// <remarks>
+     /// Uses linear interpolation for continuous values and weighted selection for discrete values.
+     /// </remarks>
+     public AIAction BlendActions(AIAction behavioralAction, AIAction rlAction, float weight) { }
+     ```
+
+6. **Create training guides**:
+   - In `docs/TRAINING_GUIDE.md`:
+     - Step-by-step training process
+     - How to modify training configs
+     - How to monitor training progress
+     - How to evaluate trained models
+     - How to export and integrate models
+     - Troubleshooting training issues
+
+7. **Document configuration files**:
+   - Add comments to all training YAML files explaining each parameter
+   - Reference ML-Agents documentation where appropriate
+
+8. **Create video demonstrations** (optional but recommended):
+   - Record gameplay showing physics AI in action
+   - Show different difficulty levels
+   - Show behind-the-scenes (gizmos, debug visualizations)
+   - Include in docs or link to external hosting
+
+9. **Update TRAINING_LOG.md**:
+   - Ensure all training sessions documented
+   - Include final model statistics
+   - Note any lessons learned
+
+10. **Create release notes**:
+    - In `docs/RELEASE_NOTES_PHYSICS_AI.md`:
+      - Summary of feature
+      - What's new
+      - What changed
+      - Known limitations
+      - Future plans
 
 **Verification Checklist:**
-- [ ] Timer displays correctly in MM:SS format
-- [ ] Timer updates on time changes
-- [ ] Color changes based on time remaining
-- [ ] Warning animations at low time
-- [ ] Clear and readable
+- [ ] PHYSICS_AI_GUIDE.md created and comprehensive
+- [ ] PHYSICS_AI_ARCHITECTURE.md documents all components
+- [ ] TROUBLESHOOTING.md covers common issues
+- [ ] README.md updated with physics AI info
+- [ ] All code has XML documentation
+- [ ] Training guide created
+- [ ] Configuration files documented
+- [ ] Release notes created
+- [ ] Documentation reviewed for clarity and completeness
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/UI/RoundTimerUITests.cs`
-
-Test cases:
-- Timer formats time correctly (MM:SS)
-- Timer updates on OnRoundTimeChanged
-- Color changes when time low
-- Warning triggers at threshold
-
-Manual testing:
-- Start round and watch timer count down
-- Verify color changes and warnings
-- Check format accuracy
+- Have someone unfamiliar with the system read the documentation
+- Ask them to add physics AI to a character using only the docs
+- Note any confusion or missing information
+- Update docs based on feedback
 
 **Commit Message Template:**
 ```
-feat(ui): implement RoundTimerUI component
+docs(ai): comprehensive documentation for physics-based AI system
 
-- Display round timer in MM:SS format
-- Color-coded warnings as time expires
-- Pulse animation when time low
-- Always visible during round
+- Created PHYSICS_AI_GUIDE.md for user-facing documentation
+- Created PHYSICS_AI_ARCHITECTURE.md for technical details
+- Created TROUBLESHOOTING.md for common issues and solutions
+- Updated README.md with physics AI feature information
+- Added XML documentation to all public classes and methods
+- Created TRAINING_GUIDE.md for retraining models
+- Documented all training configuration files
+- Created RELEASE_NOTES_PHYSICS_AI.md
+- Updated TRAINING_LOG.md with final results
+- Reviewed and polished all documentation
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~6,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 6: Create DodgeCooldownUI Component
+## Task 6: Final Polish and Cleanup
 
-**Goal:** Display dodge cooldown indicator (subtle, contextual).
+**Goal:** Polish the system, clean up debug code, and prepare for production.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/DodgeCooldownUI.cs` - UI component class
+**Files to Modify/Create:**
+- Various files across the codebase (cleanup)
 
 **Prerequisites:**
-- Phase 2 complete (CharacterDodge exists)
+- All previous tasks completed
+- System tested and documented
 
 **Implementation Steps:**
 
-1. Create `DodgeCooldownUI` component in `Knockout.UI` namespace
-2. Implement UI component pattern:
-   - Dependencies: `CharacterDodge`
-   - Subscribe to: `OnDodgeStarted`, `OnDodgeReady`
-3. Visual elements:
-   - Small cooldown indicator (circular progress or icon with overlay)
-   - Dodge icon
-   - Optional: cooldown fill
-4. Implement contextual display:
-   - Appear when dodge used (on cooldown)
-   - Fade in cooldown overlay
-   - Hide when dodge ready again
-   - Very short cooldown (~0.2s) so indicator may be brief
-5. Positioning: HUD near controls or character portrait (subtle)
+1. **Remove or disable debug code**:
+   - Comment out or conditionally compile debug logging:
+     - `#if UNITY_EDITOR` for editor-only debug code
+   - Remove excessive gizmos (or make them togglable)
+   - Clean up test code not needed in production
+   - Remove any profiling-specific code
 
-**Design Guidance:**
-- Dodge cooldown very short (0.2s) - indicator should be subtle
-- Optional: can be omitted if feels too cluttered
-- If implemented, should not distract from combat
-- Consider: only show when dodge on cooldown (contextual)
+2. **Optimize imports and dependencies**:
+   - Remove unused `using` statements
+   - Verify all external dependencies documented
+   - Ensure ML-Agents package version pinned (not "latest")
 
-**Verification Checklist:**
-- [ ] Indicator appears on dodge use
-- [ ] Cooldown progress displays
-- [ ] Indicator hides when ready
-- [ ] Non-intrusive and subtle
+3. **Code cleanup**:
+   - Remove commented-out code blocks
+   - Fix any compiler warnings
+   - Run code formatter for consistency
+   - Remove TODO comments or convert to issues
 
-**Testing Instructions:**
+4. **Asset cleanup**:
+   - Delete unused training checkpoints (keep only final models)
+   - Organize training results in archive folder
+   - Ensure all assets properly named and organized
+   - Remove temporary test scenes
 
-Manual testing:
-- Dodge repeatedly
-- Check if cooldown indicator appears
-- Verify timing matches DodgeData cooldown
+5. **Configuration cleanup**:
+   - Review all serialized field defaults (are they sensible?)
+   - Ensure all ScriptableObjects configured correctly
+   - Remove experimental configuration files
 
-**Commit Message Template:**
-```
-feat(ui): implement DodgeCooldownUI component
+6. **Final testing pass**:
+   - Build the project (not just Play in editor)
+   - Test built executable to ensure AI works outside editor
+   - Verify model loads correctly in build
+   - Check performance in build vs editor
 
-- Display dodge cooldown indicator
-- Contextual appearance (only when on cooldown)
-- Subtle and non-intrusive
-```
+7. **Create prefab variants**:
+   - Create AI character prefab with physics AI configured
+   - Create variants for each difficulty level
+   - Makes it easy to spawn AI opponents in any scene
 
-**Estimated Tokens:** ~5,000
+8. **Add telemetry/analytics** (optional):
+   - Log AI performance metrics in production:
+     - Hit accuracy
+     - Damage ratios
+     - Win rates
+     - Player feedback on difficulty
+   - Helps tune AI based on real player data
 
----
+9. **Create demo scene**:
+   - Showcase physics AI capabilities
+   - Include all difficulty levels
+   - Show debug visualizations
+   - Useful for presentations or onboarding
 
-### Task 7: Create MomentumBarUI Component (Optional)
-
-**Goal:** Display momentum advantage as visual bar (optional enhancement).
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/MomentumBarUI.cs` - UI component class (optional)
-
-**Prerequisites:**
-- Phase 4 complete (CharacterScoring or MomentumTracker if implemented)
-
-**Implementation Steps:**
-
-1. Create `MomentumBarUI` component in `Knockout.UI` namespace (optional)
-2. Implement UI component pattern:
-   - Dependencies: Both `CharacterScoring` components (or `MomentumTracker`)
-   - Subscribe to score change events
-3. Visual elements:
-   - Horizontal bar (center = neutral)
-   - Fill extends left (opponent advantage) or right (player advantage)
-   - Color-coded: blue (player) vs red (opponent)
-   - Center marker (neutral point)
-4. Implement momentum display:
-   - Calculate momentum: `(playerScore - opponentScore) / (playerScore + opponentScore)`
-   - Map to bar fill (-1 to 1 → left to right)
-   - Update smoothly (lerp)
-5. Positioning: top or bottom HUD (horizontal bar)
-
-**Design Guidance:**
-- Momentum bar is optional (nice-to-have, not critical)
-- Provides at-a-glance "who's winning" feedback
-- Should not clutter main action area
-- Can be toggled on/off by player preference
+10. **Final commit and tag**:
+    - Commit all final changes
+    - Tag release: `git tag -a v1.0-physics-ai -m "Physics-based AI system complete"`
+    - Push tag: `git push origin v1.0-physics-ai`
 
 **Verification Checklist:**
-- [ ] Momentum bar displays correctly
-- [ ] Fill direction matches score advantage
-- [ ] Color-coded clearly
-- [ ] Smooth updates
-
-**Testing Instructions:**
-
-Manual testing:
-- Perform actions to build score
-- Watch momentum bar shift
-- Verify direction and color
-
-**Commit Message Template:**
-```
-feat(ui): implement MomentumBarUI component (optional)
-
-- Display momentum advantage visually
-- Horizontal bar with center neutral point
-- Color-coded player vs opponent
-- Smooth updates based on scoring
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 8: Integrate All UI Components into Game Scene
-
-**Goal:** Add all UI components to game scene and wire to characters.
-
-**Files to Modify:**
-- Game scene(s) - Add UI GameObjects and components
-
-**Prerequisites:**
-- Tasks 1-7 complete (all UI components exist)
-
-**Implementation Steps:**
-
-1. Open main game scene
-2. Create UI Canvas hierarchy:
-   - Canvas (if not exists)
-   - HUD Panel (always visible elements):
-     - Health bars (existing)
-     - Stamina bars (new)
-     - Round timer (new)
-     - Real-time scores (new, optional)
-     - Special move cooldown (new)
-     - Dodge cooldown (new, optional)
-     - Momentum bar (new, optional)
-   - Combat Feedback Panel (contextual elements):
-     - Combo counter (new)
-   - Overlay Panel (round end elements):
-     - Scoring breakdown (new)
-     - Judge decision announcement (new)
-3. Add UI components to corresponding GameObjects
-4. Wire dependencies:
-   - Find and assign character component references (CharacterStamina, CharacterComboTracker, etc.)
-   - Assign UI element references (Image, Text components)
-5. Layout and positioning:
-   - Follow existing UI style and spacing
-   - Ensure no overlaps
-   - Test at different resolutions (UI should scale)
-6. Test all UI elements in play mode
-
-**Design Guidance:**
-- Organize UI hierarchy clearly (HUD, Feedback, Overlays)
-- Use Canvas scaler for resolution independence
-- Follow existing UI style (colors, fonts, sizing)
-- Test UI at 16:9, 16:10, 21:9 aspect ratios
-
-**Verification Checklist:**
-- [ ] All UI components added to scene
-- [ ] Dependencies wired correctly
-- [ ] UI elements positioned and styled
-- [ ] No overlaps or layout issues
-- [ ] UI scales at different resolutions
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Verify all UI elements appear and function
-- Test at different resolutions
-- Check for visual issues or overlaps
-
-**Commit Message Template:**
-```
-feat(ui): integrate all UI components into game scene
-
-- Add UI Canvas hierarchy
-- Wire all UI components to characters
-- Position and style UI elements
-- Test at multiple resolutions
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 9: Create Training Mode Scene
-
-**Goal:** Create dedicated training/practice scene for learning mechanics.
-
-**Files to Create:**
-- `Assets/Knockout/Scenes/TrainingMode.unity` - New scene
-
-**Prerequisites:**
-- Understand existing scene structure
-
-**Implementation Steps:**
-
-1. Create new scene "TrainingMode"
-2. Copy base game scene setup:
-   - Camera, lighting, environment
-   - Player character
-   - Opponent character (dummy AI)
-   - UI Canvas with all HUD elements
-3. Add training mode specific elements:
-   - Training UI panel (settings, toggles)
-   - Damage numbers display (floating text on hits)
-   - Reset button (reset characters to starting positions)
-4. Configure opponent as dummy:
-   - AI disabled or set to passive (doesn't attack)
-   - Infinite health (optional, for testing combos)
-   - Can be set to block/dodge on command (advanced)
-5. Scene settings:
-   - No round timer (or very long timer)
-   - No round limits (continuous practice)
-6. Save scene in `Assets/Knockout/Scenes/`
-
-**Design Guidance:**
-- Training mode is for practice, not competition
-- Dummy AI should be predictable and controllable
-- Environment can be simple (grid floor, neutral lighting)
-- Focus on functionality over aesthetics
-
-**Verification Checklist:**
-- [ ] Scene created and functional
-- [ ] Player and dummy characters present
-- [ ] UI elements working
-- [ ] Dummy AI passive or controllable
-- [ ] Scene accessible from menu (if menu exists)
-
-**Testing Instructions:**
-
-Manual testing:
-- Open training scene
-- Enter play mode
-- Verify player can practice mechanics
-- Test dummy AI behavior
-
-**Commit Message Template:**
-```
-feat(training): create training mode scene
-
-- Set up dedicated practice environment
-- Add player and dummy AI opponent
-- Configure for continuous practice
-- Prepare for training UI features
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 10: Create TrainingModeUI Component
-
-**Goal:** Implement training mode settings UI for toggles and controls.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/TrainingModeUI.cs` - UI component class
-
-**Prerequisites:**
-- Task 9 complete (TrainingMode scene exists)
-
-**Implementation Steps:**
-
-1. Create `TrainingModeUI` component in `Knockout.UI` namespace
-2. Implement training mode controls:
-   - Dependencies: Player and dummy character references, UI Toggle components
-3. Training options (UI toggles):
-   - Unlimited stamina (toggle)
-   - Unlimited health (toggle)
-   - Show damage numbers (toggle)
-   - Dummy AI behavior: Passive / Block / Dodge (dropdown or cycle button)
-   - Reset positions button
-4. Implement toggle functionality:
-   - Unlimited stamina: Set CharacterStamina regeneration very high or disable consumption
-   - Unlimited health: Disable damage or instant heal
-   - Show damage numbers: Enable/disable damage number display
-   - Dummy behavior: Set AI state or disable AI
-5. Implement reset button:
-   - Reset characters to starting positions and states
-   - Reset health, stamina to full
-   - Clear combo state
-6. Visual elements:
-   - Settings panel (can be toggled on/off with key press, e.g., Tab)
-   - Checkboxes/toggles for each option
-   - Buttons for actions
-7. Positioning: Side panel or overlay (non-intrusive)
-
-**Design Guidance:**
-- Training UI should be accessible but not blocking combat view
-- Toggles should have immediate effect
-- Reset button useful for repeated practice of specific scenarios
-- Settings persist during session (not across game restarts unless saved)
-
-**Verification Checklist:**
-- [ ] Settings panel displays correctly
-- [ ] Toggles functional (unlimited stamina, health)
-- [ ] Dummy behavior controls work
-- [ ] Reset button functional
-- [ ] UI toggleable on/off
-
-**Testing Instructions:**
-
-Manual testing in TrainingMode scene:
-- Toggle unlimited stamina and perform attacks
-- Toggle unlimited health and take damage
-- Change dummy AI behavior
-- Use reset button
-- Verify all settings work
-
-**Commit Message Template:**
-```
-feat(training): implement TrainingModeUI component
-
-- Add training mode settings panel
-- Unlimited stamina and health toggles
-- Dummy AI behavior controls
-- Reset button for practice scenarios
-```
-
-**Estimated Tokens:** ~8,000
-
----
-
-### Task 11: Create DamageNumbersUI Component
-
-**Goal:** Display floating damage numbers on hits (training mode feature).
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/DamageNumbersUI.cs` - UI component class
-
-**Prerequisites:**
-- Understand Unity UI WorldSpace or floating text techniques
-
-**Implementation Steps:**
-
-1. Create `DamageNumbersUI` component in `Knockout.UI` namespace
-2. Implement damage number spawning:
-   - Dependencies: `CharacterCombat` (for both characters)
-   - Subscribe to: `OnHitLanded` events
-3. Create damage number prefab:
-   - UI Text element (or TextMeshPro)
-   - Animation: float upward and fade out over ~1 second
-   - Color-coded: white (normal), yellow (combo), red (special move)
-4. Implement number display:
-   - On hit: instantiate damage number at hit position (world space)
-   - Display damage value (rounded to integer or 1 decimal)
-   - Play float-up animation
-   - Destroy after animation completes
-5. Pool damage number instances (avoid constant instantiation)
-6. Option to enable/disable (controlled by TrainingModeUI toggle)
-
-**Design Guidance:**
-- Damage numbers provide precise feedback (how much damage dealt)
-- Useful for testing and balancing
-- Animation should be quick (don't clutter screen)
-- Color coding helps distinguish hit types
-- Optional: show combo scaling indicator (e.g., "15 (75%)")
-
-**Verification Checklist:**
-- [ ] Damage numbers spawn on hits
-- [ ] Numbers display correct damage values
-- [ ] Animation plays smoothly
-- [ ] Color-coded by hit type
-- [ ] Can be toggled on/off
-
-**Testing Instructions:**
-
-Manual testing:
-- Enable damage numbers in training mode
-- Perform various attacks
-- Verify damage values accurate
-- Check animations and colors
-
-**Commit Message Template:**
-```
-feat(training): implement DamageNumbersUI component
-
-- Display floating damage numbers on hits
-- Color-coded by hit type
-- Float-up and fade animation
-- Toggleable in training mode
-```
-
-**Estimated Tokens:** ~7,000
-
----
-
-### Task 12: Implement Dummy AI for Training Mode
-
-**Goal:** Create controllable dummy AI opponent for practice.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/AI/DummyAI.cs` - Dummy AI controller
-
-**Prerequisites:**
-- Understand existing AI system (CharacterAI, AIStateMachine)
-
-**Implementation Steps:**
-
-1. Create `DummyAI` component (or extend existing AI)
-2. Implement dummy behaviors (selectable via TrainingModeUI):
-   - **Passive:** Stand idle, doesn't attack or defend
-   - **Blocking:** Always blocks incoming attacks
-   - **Dodging:** Attempts to dodge incoming attacks (tests dodge timing)
-   - **Counter:** Blocks then counter-attacks (tests parry follow-up)
-3. Disable aggressive AI:
-   - No autonomous attacks
-   - No approach behavior
-   - Reactive only
-4. Implement behavior switching:
-   - Public method `SetBehavior(DummyBehavior behavior)` called by TrainingModeUI
-   - Enum `DummyBehavior { Passive, Blocking, Dodging, Counter }`
-5. Integrate with character:
-   - Replace or disable CharacterAI on dummy character
-   - Add DummyAI component
-
-**Design Guidance:**
-- Dummy should be predictable and consistent
-- Blocking dummy: always blocks (tests combo breaking)
-- Dodging dummy: dodges at consistent timing (tests attack timing)
-- Passive dummy: punching bag (pure damage testing)
-- Counter dummy: blocks and counter-attacks (tests defense and spacing)
-
-**Verification Checklist:**
-- [ ] DummyAI component functional
-- [ ] Passive behavior works (stands idle)
-- [ ] Blocking behavior works (always blocks)
-- [ ] Dodging behavior works (attempts dodges)
-- [ ] Behavior switching functional
-
-**Testing Instructions:**
-
-Manual testing:
-- Set dummy to each behavior mode
-- Test player attacks against each mode
-- Verify dummy responds as expected
-
-**Commit Message Template:**
-```
-feat(training): implement DummyAI for training mode
-
-- Create controllable dummy AI behaviors
-- Passive, Blocking, Dodging, Counter modes
-- Predictable and consistent for practice
-- Switchable via training UI
-```
-
-**Estimated Tokens:** ~7,000
-
----
-
-### Task 13: Polish UI Animations and Feedback
-
-**Goal:** Add polish animations, transitions, and visual feedback to UI.
-
-**Files to Modify:**
-- All UI components - Add animations and transitions
-
-**Prerequisites:**
-- All UI components implemented (Tasks 1-11)
-
-**Implementation Steps:**
-
-1. Add UI animations:
-   - **Combo counter:** Scale pulse on each hit, flash on sequence completion
-   - **Special move cooldown:** Glow or pulse when ready
-   - **Stamina bar:** Flash red when depleted
-   - **Scoring breakdown:** Slide-in animation on appear, fade-out on disappear
-   - **Damage numbers:** Float-up and fade (already implemented)
-2. Add smooth transitions:
-   - Lerp (smooth interpolation) for bar fills (stamina, cooldown, momentum)
-   - Fade-in/fade-out for contextual elements
-3. Add visual feedback:
-   - Hit flash (screen flash or character outline) on combo hit
-   - Special effects on parry success (particle effect or screen effect)
-   - Audio hooks for UI events (combo ding, special ready beep, etc.)
-4. Optimize animations:
-   - Use Unity Animator or DOTween for smooth animations
-   - Ensure animations don't impact performance (60fps maintained)
-
-**Design Guidance:**
-- Polish makes UI feel responsive and satisfying
-- Subtle animations better than overly flashy
-- Animations should enhance readability, not distract
-- Audio cues reinforce visual feedback
-
-**Verification Checklist:**
-- [ ] All UI elements have appropriate animations
-- [ ] Transitions smooth and polished
-- [ ] Visual feedback clear and satisfying
-- [ ] Performance maintained (60fps)
-
-**Testing Instructions:**
-
-Manual testing:
-- Trigger all UI elements in play mode
-- Verify animations play smoothly
-- Check for performance issues
-- Get feedback on feel/polish
-
-**Commit Message Template:**
-```
-feat(ui): add polish animations and visual feedback
-
-- Animate UI elements for responsiveness
-- Smooth transitions and interpolations
-- Visual feedback for game events
-- Maintain 60fps performance
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 14: Comprehensive UI and Training Integration Testing
-
-**Goal:** Verify all UI and training mode systems work correctly.
-
-**Files to Create:**
-- `Assets/Knockout/Tests/PlayMode/UI/UIIntegrationTests.cs`
-- `Assets/Knockout/Tests/PlayMode/Training/TrainingModeTests.cs`
-
-**Prerequisites:**
-- All previous tasks complete
-
-**Implementation Steps:**
-
-1. Create UI integration tests:
-   - Test: All UI elements subscribe to correct events
-   - Test: UI updates on gameplay events (stamina change, combo hit, score change)
-   - Test: Contextual UI appears/disappears correctly
-   - Test: UI displays accurate data (values, percentages, timers)
-   - Test: UI doesn't cause performance issues (frame rate test)
-2. Create training mode tests:
-   - Test: Training mode scene loads correctly
-   - Test: Unlimited stamina toggle works
-   - Test: Unlimited health toggle works
-   - Test: Dummy AI behaviors work
-   - Test: Reset button resets state correctly
-   - Test: Damage numbers display accurately
-3. Test edge cases:
-   - UI with multiple simultaneous events (combo + special move + parry)
-   - UI at different resolutions
-   - Training toggles mid-combat
-   - Rapid reset button presses
-
-**Design Guidance:**
-- UI should never cause gameplay issues
-- All UI data should be accurate (no desyncs)
-- Training mode should be stable with all toggles
-
-**Verification Checklist:**
-- [ ] All integration tests pass
-- [ ] UI functional in gameplay
-- [ ] Training mode functional
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps)
-
-**Testing Instructions:**
-
-Run all tests:
-- UI integration tests
-- Training mode tests
-- Manual gameplay test with all UI active
-
-**Commit Message Template:**
-```
-test(ui,training): add comprehensive integration tests
-
-- Test UI event subscriptions and updates
-- Test training mode toggles and features
-- Verify UI accuracy and performance
-- Cover edge cases and simultaneous events
-```
-
-**Estimated Tokens:** ~8,000
-
----
-
-### Task 15: Documentation and Final Polish
-
-**Goal:** Document UI systems and training mode, finalize Phase 5 and overall project.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/UI/UI_SYSTEMS.md` - UI documentation
-- `docs/TRAINING_MODE.md` - Training mode guide
-- `docs/CORE_MECHANICS_IMPLEMENTATION.md` - Overall implementation summary
-
-**Files to Modify:**
-- All Phase 5 scripts - Remove debug logs, finalize comments
-
-**Prerequisites:**
-- All previous tasks complete
-- All tests passing
-
-**Implementation Steps:**
-
-1. Create UI_SYSTEMS.md:
-   - Overview of all UI components
-   - How to configure UI elements
-   - Contextual display behavior explanation
-   - Customization guide (colors, positioning, animations)
-   - Troubleshooting
-2. Create TRAINING_MODE.md:
-   - How to use training mode
-   - Explanation of all toggles and features
-   - Dummy AI behavior guide
-   - Practice tips and use cases
-3. Create CORE_MECHANICS_IMPLEMENTATION.md:
-   - Summary of all implemented systems (Phases 1-5)
-   - Architecture overview
-   - How systems integrate
-   - Extension points for future work
-   - Known limitations and future enhancements
-4. Review all Phase 5 scripts:
-   - Remove debug logs
-   - Finalize XML comments
-   - Verify naming conventions
-5. Update main README with links to all documentation
-
-**Design Guidance:**
-- Documentation should be comprehensive and accessible
-- Guides should help new developers understand the systems
-- Training mode guide should help players learn mechanics
-
-**Verification Checklist:**
-- [ ] All documentation complete and comprehensive
-- [ ] All debug logs removed
-- [ ] XML comments complete
+- [ ] Debug code removed or disabled
 - [ ] No compiler warnings
-- [ ] Main README updated
+- [ ] Code formatted consistently
+- [ ] Unused assets removed
+- [ ] Configuration reviewed and cleaned
+- [ ] Build tested and works
+- [ ] Prefab variants created
+- [ ] Demo scene created
+- [ ] Final commit and tag created
 
 **Testing Instructions:**
-
-Final checks:
-- Build project (verify no errors)
-- Run all tests (verify all pass)
-- Code review
-- Documentation review
+- Build project to executable
+- Run executable and test all AI behaviors
+- Verify no errors in logs
+- Check performance in build
 
 **Commit Message Template:**
 ```
-docs(ui,training): add comprehensive documentation
+chore(ai): final polish and production preparation
 
-- Create UI_SYSTEMS.md guide
-- Create TRAINING_MODE.md user guide
-- Create CORE_MECHANICS_IMPLEMENTATION.md summary
-- Remove debug logging and finalize code
-- Update main README
+- Removed debug logging and excessive gizmos
+- Cleaned up unused code and commented blocks
+- Fixed all compiler warnings
+- Organized assets and removed temporary files
+- Reviewed and cleaned configuration files
+- Tested built executable - AI functional
+- Created AI character prefab variants for each difficulty
+- Created physics AI demo scene
+- Tagged release as v1.0-physics-ai
+- System ready for production use
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~7,000
+**Estimated tokens:** ~10,000
 
 ---
 
 ## Phase 5 Verification
 
-**Completion Checklist:**
-- [ ] All 15 tasks completed
-- [ ] All tests passing (EditMode + PlayMode)
-- [ ] All UI components functional and polished
-- [ ] Contextual UI appears/disappears correctly
-- [ ] Training mode scene created and functional
-- [ ] Training mode toggles and features working
-- [ ] Dummy AI behaviors implemented
-- [ ] Damage numbers display accurate
-- [ ] UI performance acceptable (60fps maintained, Profiler shows all UI components < 0.1ms per frame total, no GC allocations from UI updates)
-- [ ] Documentation complete
-- [ ] Code reviewed and cleaned
-- [ ] No console errors or warnings
+Complete final checklist:
 
-**All Phases Complete:**
-- ✅ Phase 0: Foundation
-- ✅ Phase 1: Core Resource Systems (Stamina, Enhanced Knockdowns)
-- ✅ Phase 2: Advanced Defense (Dodge, Parry)
-- ✅ Phase 3: Combo System (Chains, Sequences)
-- ✅ Phase 4: Special Moves & Judge Scoring
-- ✅ Phase 5: UI Systems & Training Mode
+### Integration
+- [ ] AIArbiter component implemented
+- [ ] AIAction common format used by both systems
+- [ ] Blending modes functional (Behavioral, RL, Context, Blend)
+- [ ] Context-based switching works correctly
+- [ ] Action extraction from both systems successful
+- [ ] Unified action execution through character components
+- [ ] Smooth transitions between controllers
 
-**Core Fighting Mechanics - COMPLETE**
+### Performance
+- [ ] 60fps maintained with hybrid AI
+- [ ] AI decision time <2ms per frame
+- [ ] GC allocations <1KB/frame
+- [ ] Multiple agents (at least 2) perform well
+- [ ] Profiling completed and optimized
 
----
+### Difficulty Levels
+- [ ] AIDifficultySettings ScriptableObject created
+- [ ] Easy, Medium, Hard, Expert presets tuned
+- [ ] Reaction time, accuracy, and blending configured per difficulty
+- [ ] Each difficulty appropriately challenging
 
-## Post-Implementation Considerations
+### Testing
+- [ ] Integration test suite created (20+ tests)
+- [ ] All combat behaviors tested
+- [ ] Edge cases handled
+- [ ] Performance tests passing
+- [ ] User acceptance testing completed
+- [ ] Bugs fixed or documented
+- [ ] Test report created
 
-**Future Enhancements (Not in Scope):**
-- AI enhancement to use all new mechanics strategically
-- Online multiplayer integration (architecture supports it)
-- Additional characters with unique combos and special moves
-- Advanced training mode features (combo trials, challenges)
-- Replay system
-- Enhanced VFX and audio integration
-- Character customization and progression systems
+### Documentation
+- [ ] PHYSICS_AI_GUIDE.md created
+- [ ] PHYSICS_AI_ARCHITECTURE.md created
+- [ ] TROUBLESHOOTING.md created
+- [ ] README.md updated
+- [ ] XML documentation on all public classes
+- [ ] Training guide created
+- [ ] Release notes created
 
-**Known Limitations:**
-- AI uses basic behavioral state machine (not advanced fighting game AI)
-- One special move per character (can be extended)
-- Judge scoring weights not playtested (will require balancing)
-- Training mode is basic (no tutorials or guided training)
-
-**Balancing and Tuning:**
-- After implementation, extensive playtesting required
-- Tune stamina costs, regeneration rates
-- Balance combo damage scaling and sequence bonuses
-- Adjust special move cooldowns and costs
-- Fine-tune judge scoring weights
-- Test all systems with various player skill levels
-
----
-
-## Celebration
-
-🎉 **Congratulations!** 🎉
-
-All Core Fighting Mechanics have been implemented:
-- Stamina management with exhaustion penalties
-- Directional dodge with i-frames and parry system
-- Hybrid combo system with natural chains and predefined sequences
-- Character signature special moves with cooldown + stamina gating
-- Comprehensive judge scoring and round decisions
-- Full contextual UI for all systems
-- Training mode for practice and learning
-
-The Knockout boxing game now has a deep, skill-based fighting system ready for playtesting and polish. Great work!
+### Polish
+- [ ] Debug code removed/disabled
+- [ ] Code cleaned and formatted
+- [ ] Assets organized
+- [ ] Build tested
+- [ ] Prefab variants created
+- [ ] Demo scene created
+- [ ] Final release tagged
 
 ---
 
-**End of Implementation Plan**
+## Project Completion
+
+### Success Metrics
+
+**Technical Achievements:**
+- ✓ Physics-based AI trained via RL (Phases 1-4)
+- ✓ Hybrid AI integrating behavioral and RL systems
+- ✓ 60fps performance maintained
+- ✓ ~104 dimensional observation space
+- ✓ ~23 dimensional continuous action space
+- ✓ Multi-objective reward function balancing 4 goals
+- ✓ 4 difficulty levels configured
+
+**Behavioral Achievements:**
+- ✓ Natural physics-based movement with momentum and weight
+- ✓ Realistic attack execution with weight transfer
+- ✓ Hit reactions and balance recovery
+- ✓ Defensive blocking and evasion
+- ✓ Strategic combat with variety and adaptation
+- ✓ Entertainment value (dynamic, engaging fights)
+
+**Quality Achievements:**
+- ✓ Comprehensive test coverage (integration + manual)
+- ✓ Complete documentation for users and developers
+- ✓ Production-ready code (optimized, cleaned, tested)
+- ✓ Configurable and extensible system
+
+### Known Limitations
+
+Document any limitations for future reference:
+- **Training Time**: Requires 15-25 hours total training across all phases
+- **Local Training**: Optimized for local hardware, cloud training could be faster
+- **Hit Accuracy**: RL agent hit accuracy ~35-45%, below human expert level
+- **Block Timing**: Defensive timing not perfect, room for improvement with more training
+- **Model Size**: ~5-10MB .onnx files, acceptable but not tiny
+- **Physics Tuning**: Some physics parameters may need adjustment for different character models
+- **Generalizations**: Trained on specific arena/character, may need retraining for significantly different scenarios
+
+### Future Enhancements
+
+Potential improvements beyond current scope:
+- **Advanced Training**:
+  - Curriculum learning for faster convergence
+  - Opponent diversity (train against multiple styles)
+  - Imitation learning from human demonstrations
+  - Cloud-based parallel training for faster iteration
+- **Additional Behaviors**:
+  - Advanced combinations and combos
+  - Feints and mind games
+  - Adaptive strategy (learn opponent patterns mid-fight)
+  - Stamina management systems
+- **Technical Improvements**:
+  - Model compression/quantization for smaller size
+  - Hardware-accelerated inference (GPU)
+  - Asymmetric self-play for role specialization
+  - Hierarchical RL for multi-timescale decisions
+- **Gameplay Features**:
+  - Personality system (different fighting styles)
+  - Dynamic difficulty adjustment
+  - AI training mode for players
+  - Replays and analysis tools
+
+### Lessons Learned
+
+Document insights for future RL projects:
+- Transfer learning significantly speeds up training across phases
+- Physics-enhanced animations balance realism with performance better than full ragdoll
+- Multi-objective rewards require careful balancing but produce engaging behavior
+- Self-play can converge to local optima; monitoring and intervention necessary
+- Hybrid AI (behavioral + RL) provides best of both worlds: reliability + realism
+- Local training feasible for moderate complexity tasks with efficient parallelization
+- Comprehensive observation space more important than large action space
+- Incremental rollout critical for managing complexity and debugging
+
+---
+
+## Deliverables
+
+Upon completion of Phase 5, the following should be delivered:
+
+### Code Deliverables
+1. PhysicsAgent component (all phases integrated)
+2. AIArbiter component
+3. Physics controllers (Movement, Attack, Balance, Defense)
+4. Observation and action systems
+5. Reward functions
+6. Integration with CharacterAI and existing systems
+7. Difficulty system with presets
+8. Comprehensive test suite
+
+### Model Deliverables
+1. `movement_phase1.onnx` - Movement agent
+2. `attack_phase2.onnx` - Attack agent
+3. `balance_phase3.onnx` - Balance agent
+4. `defense_phase4.onnx` - Final complete agent (recommended for production)
+
+### Documentation Deliverables
+1. `README.md` (updated)
+2. `docs/plans/Phase-0.md` through `Phase-5.md` (this plan)
+3. `docs/PHYSICS_AI_GUIDE.md`
+4. `docs/PHYSICS_AI_ARCHITECTURE.md`
+5. `docs/TROUBLESHOOTING.md`
+6. `docs/TRAINING_GUIDE.md`
+7. `docs/TRAINING_LOG.md` (all training sessions)
+8. `docs/TESTING_REPORT.md`
+9. `docs/RELEASE_NOTES_PHYSICS_AI.md`
+
+### Configuration Deliverables
+1. `Assets/Knockout/Training/Config/movement_training.yaml`
+2. `Assets/Knockout/Training/Config/attack_training.yaml`
+3. `Assets/Knockout/Training/Config/balance_training.yaml`
+4. `Assets/Knockout/Training/Config/defense_training.yaml`
+5. `Assets/Knockout/Training/Config/README.md`
+
+### Scene/Prefab Deliverables
+1. TrainingArena scene (for future training)
+2. Demo scene (showcase physics AI)
+3. AI character prefab with physics AI configured
+4. Difficulty preset ScriptableObjects
+
+---
+
+## Final Notes
+
+**Congratulations on completing the Physics-Based AI Opponent implementation!**
+
+This comprehensive system represents state-of-the-art game AI, combining classical behavioral decision-making with modern deep reinforcement learning. The hybrid approach leverages the reliability and predictability of state machines with the emergent realism of physics-based learned controllers.
+
+The incremental phase-based approach allowed validation at each stage, managing risk and complexity effectively. Transfer learning enabled each phase to build on previous successes, significantly reducing total training time.
+
+The system is now production-ready, performant, well-tested, and thoroughly documented. It can serve as a foundation for future AI enhancements and as a reference for other RL projects.
+
+**Thank you for following this implementation plan. May your AI opponents provide challenging and entertaining fights!**
+
+---
+
+**PLAN_COMPLETE**

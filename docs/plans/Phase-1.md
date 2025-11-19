@@ -1,904 +1,1439 @@
-# Phase 1: Core Resource Systems
+# Phase 1: Training Infrastructure & Basic Movement
 
 ## Phase Goal
 
-Implement the stamina management system and enhanced knockdown states, providing the resource foundation for all combat mechanics. Stamina governs offensive actions (attacks, special moves) while defensive actions remain free. Enhanced knockdowns include stamina exhaustion (depletion penalty) and special knockdown states (for future special moves).
+Establish Unity ML-Agents training infrastructure and implement physics-enhanced movement and footwork. By the end of this phase, you will have a functioning RL training pipeline with a PhysicsAgent that learns natural, physics-based locomotion through self-play. The agent will move realistically with proper weight transfer, momentum, and balance while navigating the arena.
 
 **Success Criteria:**
-- Characters have stamina that depletes on attacks and regenerates passively
-- Stamina depletion triggers exhaustion state (vulnerable, cannot attack)
-- Special knockdown state exists for enhanced knockdowns
-- All systems configurable via ScriptableObjects
-- 85%+ test coverage for new components
+- ML-Agents installed and configured correctly
+- Training scene with 8+ parallel environments functional
+- PhysicsAgent component implements movement observations and actions
+- Physics controllers apply forces for realistic movement
+- Agent trains successfully via self-play (reward increases over time)
+- Trained agent demonstrates natural-looking footwork
+- Model exported and loads for inference
 
-**Estimated Tokens:** ~100,000
-
----
+**Estimated tokens:** ~95,000
 
 ## Prerequisites
 
-**Required Reading:**
-- [Phase 0: Foundation](Phase-0.md) - Architecture decisions and patterns
-
-**Existing Systems to Understand:**
-- `CharacterCombat` - Attack execution (Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs)
-- `CombatStateMachine` - State management (Assets/Knockout/Scripts/Combat/CombatStateMachine.cs)
-- `AttackData` - Attack properties (Assets/Knockout/Scripts/Characters/Data/AttackData.cs)
-- Existing combat states in `Assets/Knockout/Scripts/Combat/States/`
-
-**Environment:**
-- Unity 2021.3.8f1 LTS
-- Test framework accessible (Window > General > Test Runner)
+- Phase 0 completed (architecture and design decisions read)
+- Python 3.9 or 3.10 installed (verify with `python --version`)
+- Unity 2021.3.8f1 LTS project opened
+- Existing codebase familiarized (CharacterMovement, CharacterAI, etc.)
+- At least 8GB RAM available for local training
 
 ---
 
-## Tasks
+## Task 1: Install and Configure Unity ML-Agents
 
-### Task 1: Create StaminaData ScriptableObject
+**Goal:** Set up the Python ML-Agents package and Unity package for reinforcement learning training.
 
-**Goal:** Define stamina configuration data structure following existing `AttackData` pattern.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/StaminaData.cs` - ScriptableObject class
+**Files to Modify/Create:**
+- Python environment in project root
+- `Packages/manifest.json` - Add ML-Agents Unity package
+- `ProjectSettings/ProjectSettings.asset` - Verify scripting runtime
 
 **Prerequisites:**
-- Review `AttackData.cs` for ScriptableObject pattern
-- Review `CharacterStats.cs` for data organization
+- Clean Python 3.9 or 3.10 installation
+- `uv` package manager available (already installed per CLAUDE.md)
 
 **Implementation Steps:**
 
-1. Create `StaminaData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Stamina Data"` (order = 3)
-3. Define serialized fields for stamina configuration:
-   - Max stamina pool
-   - Regeneration rate (per second)
-   - Attack costs (Jab, Hook, Uppercut - reference existing attack type indices)
-   - Special move base cost
-   - Exhaustion parameters (duration, regen multiplier, recovery threshold)
-4. Expose public read-only properties for all fields
-5. Implement `OnValidate()` to clamp values to valid ranges (no negative values, costs <= max stamina)
-6. Add XML documentation comments following existing pattern
-7. Add tooltips to all serialized fields
+1. **Create Python virtual environment** for ML-Agents:
+   - Navigate to project root directory
+   - Create virtual environment using `uv venv` or standard Python venv
+   - Activate the virtual environment
+   - Document activation command for future use
 
-**Design Guidance:**
-- Follow DD-001 (Stamina System Design) from Phase 0
-- Default values should match balanced/realistic tuning from design (max=100, regen=25/sec)
-- Use `[Header]` attributes to group related fields
-- Array for attack costs indexed by attack type (0=Jab, 1=Hook, 2=Uppercut)
+2. **Install ML-Agents Python package**:
+   - Install `mlagents==0.30.0` (Release 20) using `uv pip install` or pip
+   - Verify installation by running `mlagents-learn --help`
+   - Check that PyTorch is installed as dependency (should auto-install)
+   - Document any installation errors and resolutions
+
+3. **Add ML-Agents Unity package**:
+   - Open Unity Package Manager (Window > Package Manager)
+   - Click "+" dropdown > "Add package from git URL"
+   - Enter: `https://github.com/Unity-Technologies/ml-agents.git?path=com.unity.ml-agents#release_20`
+   - Wait for package import (may take several minutes)
+   - Verify package appears in Package Manager as "ML Agents" version 2.3.0-exp.3
+
+4. **Verify setup**:
+   - Check that `Unity.MLAgents` namespace is available in C# scripts
+   - Open Unity > Edit > Project Settings > Player
+   - Under "Other Settings" > "Configuration" > "Scripting Backend", ensure it's set to "Mono" (IL2CPP may cause issues with ML-Agents)
+   - Verify API Compatibility Level is ".NET Standard 2.1"
+
+5. **Create documentation file** `docs/ML_AGENTS_SETUP.md`:
+   - Document Python environment activation steps
+   - List exact package versions installed
+   - Include troubleshooting notes for common issues
+   - Provide quick start command for training
 
 **Verification Checklist:**
-- [ ] ScriptableObject appears in Create menu under "Knockout/Stamina Data"
-- [ ] All fields have tooltips
-- [ ] OnValidate clamps negative values to 0
-- [ ] OnValidate prevents attack costs > max stamina
-- [ ] XML docs on class and public properties
+- [ ] Python environment activates without errors
+- [ ] `mlagents-learn --help` displays help text
+- [ ] Unity Package Manager shows ML Agents package installed
+- [ ] Can import `using Unity.MLAgents;` in C# script without errors
+- [ ] `docs/ML_AGENTS_SETUP.md` created with setup instructions
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Stamina/StaminaDataTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate clamps negative regen rate to 0
-- OnValidate clamps attack costs to [0, maxStamina]
-- Default values match design spec
-- Boundary conditions (maxStamina = 0, regenRate = 0)
+- Create minimal test script that inherits from `Unity.MLAgents.Agent`
+- Verify script compiles without errors
+- Delete test script after verification
 
 **Commit Message Template:**
 ```
-feat(stamina): add StaminaData ScriptableObject
+chore(ml-agents): install and configure ML-Agents framework
 
-- Define stamina configuration structure
-- Add validation for tunable parameters
-- Follow existing AttackData pattern
-- Includes comprehensive tooltips and documentation
+- Created Python virtual environment with mlagents==0.30.0
+- Added Unity ML-Agents package via Package Manager
+- Verified scripting backend and API compatibility settings
+- Created ML_AGENTS_SETUP.md with installation instructions
+- Confirmed Unity.MLAgents namespace available in C#
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~4,000
 
 ---
 
-### Task 2: Extend AttackData with Stamina Cost
+## Task 2: Create Base PhysicsAgent Component
 
-**Goal:** Add stamina cost field to existing `AttackData` to support per-attack customization.
+**Goal:** Implement the foundational PhysicsAgent component that inherits from Unity's Agent class and provides the structure for all future RL behaviors.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Data/AttackData.cs` - Add stamina cost field
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs.meta` (Unity auto-generated)
 
 **Prerequisites:**
-- Task 1 complete (understand stamina values)
-- Read existing `AttackData.cs` structure
+- Task 1 completed (ML-Agents installed)
+- Familiarity with ML-Agents Agent class API
+- Understanding of Phase 0 ADR-005 (Observation Space) and ADR-006 (Action Space)
 
 **Implementation Steps:**
 
-1. Add new serialized field in "Damage Properties" header section:
-   - `staminaCost` (float, default based on attack type)
-   - Tooltip explaining this overrides StaminaData default if set
-2. Add public property `StaminaCost`
-3. Update `OnValidate()` to clamp stamina cost >= 0
-4. Document that 0 stamina cost means "use default from StaminaData"
+1. **Create folder structure**:
+   - Create `Assets/Knockout/Scripts/AI/PhysicsAgent/` directory
+   - This will house all physics agent related components
 
-**Design Guidance:**
-- This allows per-attack customization (e.g., one character's Jab costs more)
-- Default = 0 means "use StaminaData.attackCosts[attackTypeIndex]"
-- Non-zero value overrides StaminaData default
-- Maintains backward compatibility (existing AttackData assets default to 0)
+2. **Implement PhysicsAgent.cs skeleton**:
+   - Create class inheriting from `Unity.MLAgents.Agent`
+   - Add component requirements: `RequireComponent(typeof(CharacterController))`
+   - Add serialized fields for tuning:
+     - Decision interval (default 0.1f seconds for 10Hz)
+     - Max step count per episode (default 5000 steps)
+     - Arena bounds (for normalization)
+   - Add private component references:
+     - CharacterController (coordinator component)
+     - CharacterMovement
+     - CharacterHealth
+     - CharacterCombat
+     - Rigidbody (for physics forces)
+
+3. **Implement Initialize() override**:
+   - Cache all component references using GetComponent
+   - Validate that all required components exist (log errors if missing)
+   - Set MaxStep property for episode length
+   - Initialize any data structures needed
+
+4. **Implement OnEpisodeBegin() override**:
+   - Reset character position to random starting position in arena
+   - Reset character rotation to face opponent
+   - Reset health to full (via CharacterHealth.ResetHealth())
+   - Reset velocity to zero (Rigidbody.velocity = Vector3.zero)
+   - Clear any applied forces
+   - If in training mode, randomize starting conditions slightly for variety
+
+5. **Implement CollectObservations() stub**:
+   - For now, just add placeholder observations to meet minimum requirement
+   - Add comment: "Movement observations to be implemented in Task 4"
+   - Add basic observations to avoid errors:
+     - Self position (x, y, z)
+     - Self velocity (x, y, z)
+   - Use `sensor.AddObservation()` for each value after normalization
+
+6. **Implement OnActionReceived() stub**:
+   - For now, just extract action values to verify action space works
+   - Add comment: "Movement actions to be implemented in Task 5"
+   - Extract continuous actions from `actions.ContinuousActions`
+   - Log action values for debugging (can remove later)
+   - Don't apply any actual movement yet
+
+7. **Implement Heuristic() override**:
+   - Map keyboard input to action space for manual testing
+   - WASD for movement
+   - Arrow keys for turning
+   - This allows testing agent without training
+   - Use Input.GetAxis() and normalize to [-1, 1]
+
+8. **Add helper methods**:
+   - `private Vector3 GetArenaCenter()`: Returns center point of fighting arena
+   - `private Bounds GetArenaBounds()`: Returns bounds of valid movement area
+   - `private void ResetEpisode()`: Helper called from OnEpisodeBegin
+
+9. **Add debug visualization** (optional but recommended):
+   - In OnDrawGizmos, visualize arena bounds
+   - Draw ray showing agent's facing direction
+   - Helps with debugging positioning issues
 
 **Verification Checklist:**
-- [ ] Existing AttackData assets load without errors
-- [ ] New field appears in Inspector for AttackData
-- [ ] Tooltip explains override behavior
-- [ ] OnValidate clamps to >= 0
+- [ ] PhysicsAgent.cs compiles without errors
+- [ ] Component can be added to character GameObject in Unity
+- [ ] Inspector shows all serialized fields
+- [ ] No errors when entering Play mode with component attached
+- [ ] Heuristic mode allows manual control via keyboard
+- [ ] Episode resets character position and health
 
 **Testing Instructions:**
-
-Update EditMode test: `Assets/Knockout/Tests/EditMode/Characters/AttackDataTests.cs` (if exists, otherwise create)
-
-Test cases:
-- Default stamina cost is 0
-- OnValidate clamps negative cost to 0
-- StaminaCost property returns correct value
+- Unit tests not required yet (no complex logic to test)
+- Manual testing:
+  - Add PhysicsAgent to player character GameObject
+  - Enter Play mode
+  - Verify component initializes without errors
+  - Test Heuristic control with keyboard
+  - Observe episode reset after MaxStep reached
 
 **Commit Message Template:**
 ```
-feat(stamina): add stamina cost to AttackData
+feat(physics-agent): implement base PhysicsAgent component
 
-- Support per-attack stamina cost customization
-- Default 0 = use StaminaData default
-- Maintains backward compatibility
+- Created PhysicsAgent.cs inheriting from Unity.MLAgents.Agent
+- Implemented Initialize with component reference caching
+- Implemented OnEpisodeBegin with position/health reset logic
+- Added placeholder CollectObservations and OnActionReceived
+- Implemented Heuristic for keyboard-based manual testing
+- Added arena bounds helper methods for normalization
+- Included debug visualization with OnDrawGizmos
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~2,000
+**Estimated tokens:** ~6,000
 
 ---
 
-### Task 3: Create CharacterStamina Component
+## Task 3: Create Training Scene with Parallel Environments
 
-**Goal:** Implement stamina tracking, consumption, and regeneration component.
+**Goal:** Set up a dedicated training scene with multiple parallel environments to accelerate self-play RL training.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterStamina.cs` - Component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scenes/Training/TrainingArena.unity` (new scene)
+- `Assets/Knockout/Prefabs/Training/TrainingCharacter.prefab` (new prefab)
+- `Assets/Knockout/Scripts/Training/TrainingEnvironment.cs` (new component)
+- `Assets/Knockout/Scripts/Training/EpisodeManager.cs` (new component)
 
 **Prerequisites:**
-- Task 1 complete (StaminaData exists)
-- Task 2 complete (AttackData has stamina cost)
-- Review `CharacterHealth.cs` for component pattern
-- Review `CharacterCombat.cs` for event subscriptions
+- Task 2 completed (PhysicsAgent component exists)
+- Existing character prefabs with all required components
+- Understanding of ML-Agents environment setup
 
 **Implementation Steps:**
 
-1. Create `CharacterStamina` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern from Phase 0:
-   - Dependencies: `CharacterController`, `StaminaData`, `CharacterCombat`
-   - `Initialize()` method
-   - Event subscriptions in `Initialize()`
-   - `FixedUpdate()` for regeneration (60fps timing)
-   - `OnDestroy()` for cleanup
-3. Track current stamina (private float, starts at max)
-4. Implement stamina consumption:
-   - **Discover attack event:** Search CharacterCombat.cs for attack events:
-     - Pattern: `Grep pattern: "public event.*Attack" in CharacterCombat.cs`
-     - Look for: `OnAttackStarted`, `OnAttackExecuted`, `OnAttackBegin`, or similar
-     - If not found: Add `public event Action<AttackData> OnAttackStarted;` following existing event pattern
-     - Document which event you used in verification checklist
-   - Subscribe to discovered attack event in `Initialize()`
-   - Deduct stamina based on `AttackData.StaminaCost` (if > 0) or `StaminaData.attackCosts[attackTypeIndex]`
-   - Fire `OnStaminaChanged` event
-   - If stamina hits 0, fire `OnStaminaDepleted` event
-5. Implement passive regeneration:
-   - In `FixedUpdate()`, check if not currently attacking
-   - Add `StaminaData.RegenPerSecond * Time.fixedDeltaTime`
-   - Clamp to max stamina
-   - Fire `OnStaminaChanged` event if value changed
-6. Pause regeneration during attack (startup + active + recovery frames)
-7. Expose public properties: `CurrentStamina`, `MaxStamina`, `StaminaPercentage`
-8. Add method `HasStamina(float cost)` to query if action is affordable
+1. **Create scene folder structure**:
+   - Create `Assets/Knockout/Scenes/Training/` directory
+   - Create new scene: `TrainingArena.unity`
+   - Set up basic lighting (directional light only, no shadows for performance)
+   - Add simple ground plane for fighting arena
 
-**Design Guidance:**
-- Follow ADR-005 (Event-Driven Communication)
-- Follow ADR-004 (Frame-Perfect Timing with FixedUpdate)
-- Regeneration pauses during attack, not during movement/blocking/idle
-- Determine "currently attacking" by subscribing to combat state changes or `CharacterCombat` attack state
+2. **Create TrainingCharacter prefab**:
+   - Duplicate existing player/AI character prefab
+   - Name it `TrainingCharacter.prefab`
+   - Ensure it has all required components:
+     - CharacterController (coordinator)
+     - CharacterMovement
+     - CharacterCombat
+     - CharacterHealth
+     - CharacterAnimator
+     - Rigidbody (add if not present, set constraints as needed)
+     - PhysicsAgent (add, set Behavior Name = "PhysicsAgent")
+   - Remove CharacterInput if present (not needed for RL)
+   - Remove CharacterAI if present (we're training RL only initially)
+   - Configure Rigidbody: mass = 70kg, drag = 0.5, angular drag = 5
+   - Set Rigidbody constraints: freeze rotation on X and Z axes (prevent tipping over)
+
+3. **Create TrainingEnvironment component**:
+   - Purpose: Manages a single self-play environment (2 characters fighting)
+   - Serialized fields:
+     - Two Transform references for character spawn points
+     - Arena bounds (Vector3 center, Vector3 size)
+     - Max episode length in seconds
+     - Reward scaling factor
+   - Responsibilities:
+     - Instantiate two TrainingCharacter prefabs at spawn points
+     - Detect episode end conditions (knockout, time limit, out of bounds)
+     - Assign opponents to each agent (they need to know who to observe)
+     - Call EndEpisode() on both agents when episode completes
+   - Implement episode end detection:
+     - Check if either character health reaches zero
+     - Check if episode duration exceeds max length
+     - Check if either character exits arena bounds
+   - When episode ends, log basic statistics (duration, winner, cause)
+
+4. **Create EpisodeManager component**:
+   - Purpose: Coordinates multiple parallel training environments
+   - Serialized fields:
+     - Number of parallel environments (default 8)
+     - TrainingEnvironment prefab reference
+     - Global statistics tracking
+   - Responsibilities:
+     - Instantiate N TrainingEnvironment instances in scene
+     - Arrange environments in grid pattern so they don't overlap
+     - Aggregate statistics across all environments
+     - Provide UI for monitoring training (optional but helpful)
+
+5. **Set up TrainingArena scene**:
+   - Add EpisodeManager GameObject to scene
+   - Configure EpisodeManager:
+     - Set parallel environments to 8 (adjust based on your hardware)
+     - Assign TrainingEnvironment prefab
+   - Create TrainingEnvironment prefab:
+     - Empty GameObject with TrainingEnvironment component
+     - Two child empty GameObjects as spawn points (5 units apart)
+     - Simple arena ground (10x10 plane)
+   - Let EpisodeManager instantiate environments at runtime
+
+6. **Configure PhysicsAgent behavior settings**:
+   - Open TrainingCharacter prefab
+   - Select PhysicsAgent component
+   - Set "Behavior Name" to "PhysicsAgent" (must match training config)
+   - Set "Decision Requester" component (add if not present):
+     - Decision Period: 2 (makes decision every 2 FixedUpdate steps, ~0.04s at 50Hz physics)
+     - Take Actions Between Decisions: true
+   - Set MaxStep on PhysicsAgent to 5000 (episode ends after this many steps)
+
+7. **Handle opponent detection**:
+   - In TrainingEnvironment, after instantiating characters:
+     - Get PhysicsAgent from each character
+     - Set opponent reference on each agent (may need to add public property to PhysicsAgent)
+     - This allows agents to observe each other's state
+   - Update PhysicsAgent to store opponent reference
+
+8. **Optimize training scene for performance**:
+   - Disable shadows on all lights
+   - Use low-poly character models if available
+   - Disable any VFX or particle systems
+   - Set camera to static position (or disable if not needed)
+   - Quality Settings: Set to "Fastest" for training
+   - Target framerate: Don't limit (Time.captureFr amerate = 0)
+
+9. **Add training UI overlay** (optional but recommended):
+   - TextMeshPro or UI Text showing:
+     - Current episode count
+     - Average episode length
+     - Recent rewards
+     - Training FPS
+   - Updated by EpisodeManager each episode
 
 **Verification Checklist:**
-- [ ] Component initializes correctly on character prefab
-- [ ] Stamina decreases when attacks performed
-- [ ] Stamina regenerates when idle
-- [ ] Regeneration pauses during attack
-- [ ] Events fire correctly (OnStaminaChanged, OnStaminaDepleted)
-- [ ] HasStamina() correctly predicts if action affordable
+- [ ] TrainingArena scene opens without errors
+- [ ] Entering Play mode spawns 8 parallel environments
+- [ ] Each environment has 2 characters facing each other
+- [ ] Characters have PhysicsAgent component with correct behavior name
+- [ ] Episodes automatically reset when conditions met
+- [ ] No visual overlap between parallel environments
+- [ ] Scene runs at acceptable FPS (>5 FPS for 8 environments)
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Stamina/CharacterStaminaTests.cs`
-
-Test cases:
-- Component initialization sets stamina to max
-- Performing attack reduces stamina by correct amount
-- Stamina regenerates over time when idle
-- Stamina does not regenerate during attack
-- OnStaminaDepleted fires when stamina reaches 0
-- HasStamina() returns correct boolean
+- Manual testing in Unity Editor:
+  - Open TrainingArena scene
+  - Enter Play mode
+  - Observe that environments spawn correctly
+  - Wait for episodes to timeout and reset
+  - Check Console for any errors
+  - Verify FPS is acceptable
+- No automated tests required for scene setup
 
 **Commit Message Template:**
 ```
-feat(stamina): implement CharacterStamina component
+feat(training): create parallel training scene infrastructure
 
-- Track current stamina with max pool
-- Consume stamina on attacks
-- Passive regeneration when not attacking
-- Fire events for UI/other systems integration
+- Created TrainingArena.unity scene with parallel environments
+- Implemented TrainingCharacter prefab with PhysicsAgent
+- Created TrainingEnvironment component for single env management
+- Created EpisodeManager for coordinating parallel envs
+- Configured 8 parallel environments in grid layout
+- Added episode end detection (knockout, timeout, out-of-bounds)
+- Optimized scene for training performance (disabled shadows, low quality)
+- Added optional training UI for monitoring progress
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~8,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 4: Integrate Stamina into CharacterCombat
+## Task 4: Implement Movement Observations
 
-**Goal:** Prevent attacks when insufficient stamina, integrate stamina checks into attack execution.
+**Goal:** Collect comprehensive observations about character physics state, opponent state, spatial relationships, and game context to enable informed movement decisions.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterCombat.cs` - Add stamina gating
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
 
 **Prerequisites:**
-- Task 3 complete (CharacterStamina exists and functional)
-- Read existing `CharacterCombat.cs` attack execution logic
+- Task 2 completed (base PhysicsAgent exists)
+- Task 3 completed (training scene with opponents set up)
+- Review Phase 0 ADR-005 for observation space design
 
 **Implementation Steps:**
 
-1. Add dependency on `CharacterStamina` component (get reference in `Initialize()` or via `GetComponent<>()`)
-2. **Locate attack execution method** in CharacterCombat.cs:
-   - Search for methods handling attack: `PerformAttack()`, `ExecuteAttack()`, `ProcessAttackInput()`, or similar
-   - Or search where AttackData is first accessed: `Grep pattern: "AttackData" in CharacterCombat.cs`
-   - Likely the method called from input handler or AI
-   - Add stamina check at the TOP of this method, before any state transitions:
-     - Check `characterStamina.HasStamina(attackCost)` before allowing attack
-     - If insufficient stamina, early return (attack does not execute)
-     - Optionally fire event `OnAttackFailedNoStamina` for feedback
-3. Ensure stamina consumption happens at attack initiation (not on hit)
-4. Update any AI attack logic to check stamina availability (if AI uses CharacterCombat)
+1. **Create PhysicsAgentObservations helper class**:
+   - Purpose: Encapsulates observation collection logic, keeps PhysicsAgent clean
+   - Make it a static class with utility methods for observation normalization
+   - Methods to implement:
+     - `NormalizePosition(Vector3 pos, Bounds bounds)` → Vector3 normalized to [-1, 1]
+     - `NormalizeVelocity(Vector3 vel, float maxSpeed)` → Vector3 normalized to [-1, 1]
+     - `NormalizeAngle(float angle)` → (cos, sin) pair
+     - `NormalizeScalar(float value, float min, float max)` → float in [-1, 1] or [0, 1]
+     - `EncodeAnimationState(CombatState state)` → one-hot vector as float array
+   - Add clear XML documentation for each method
 
-**Design Guidance:**
-- Stamina check happens BEFORE state transition to AttackingState
-- Block/parry/dodge remain free (no stamina checks for defensive actions)
-- Consider feedback for player (sound, UI flash) when attack fails due to stamina - trigger via event
+2. **Implement observation space configuration**:
+   - In PhysicsAgent, add constant for observation size
+   - Calculate based on Phase 0 design (~50-80 dimensions):
+     - Self physics: 20 observations
+     - Opponent: 15 observations
+     - Spatial: 10 observations
+     - Game context: 10 observations
+   - Override `CollectObservations(VectorSensor sensor)` in PhysicsAgent
+   - Observation order must be consistent across all episodes
+
+3. **Collect self physics state observations**:
+   - Self position (3): Normalize to arena bounds
+     - `sensor.AddObservation(PhysicsAgentObservations.NormalizePosition(transform.position, arenaBounds))`
+   - Self velocity (3): Normalize to max movement speed
+     - Get from Rigidbody or CharacterMovement component
+   - Self facing direction (2): Forward vector (x, z only, normalized)
+   - Self angular velocity (1): How fast turning, normalized
+   - Ground contact (1): Boolean as 0 or 1 (check Physics.Raycast down)
+   - Center of mass offset (2): CoM position relative to feet (x, z), normalized
+   - Animation state (6): One-hot encoding of combat state (idle, moving, attacking, blocking, hit-stunned, knocked-down)
+   - Momentum magnitude (1): Speed, normalized
+   - **Total: ~19 observations**
+
+4. **Collect opponent state observations**:
+   - Get opponent reference (should be set by TrainingEnvironment)
+   - Opponent position (3): Normalized to arena bounds
+   - Opponent velocity (3): Normalized
+   - Opponent facing direction (2): Forward (x, z)
+   - Opponent animation state (6): One-hot encoding
+   - Opponent current attack (4): One-hot (none, jab, hook, uppercut)
+     - Get from opponent's CharacterCombat component
+   - **Total: ~18 observations**
+
+5. **Collect spatial relationship observations**:
+   - Distance to opponent (1): Normalized to max arena diagonal
+   - Relative position to opponent (3): Vector from self to opponent, normalized
+   - Angle to opponent (2): cos/sin of angle between forward and opponent direction
+   - Is opponent in attack range (1): Boolean, check distance < max attack range
+   - Is self in opponent's attack range (1): Approximate using distance and opponent facing
+   - Distance to nearest arena boundary (1): Normalized
+   - **Total: ~9 observations**
+
+6. **Collect game context observations**:
+   - Self health percentage (1): Already in [0, 1] range
+   - Opponent health percentage (1): From opponent's CharacterHealth
+   - Round number (1): Normalized to max rounds (e.g., 3)
+   - Round time remaining (1): Normalized to max round time
+   - Rounds won by self (1): Normalized to max rounds
+   - Rounds won by opponent (1): Normalized
+   - Time since last hit received (1): Normalized, cap at some max (e.g., 10 seconds)
+   - Time since last hit dealt (1): Normalized, cap at max
+   - **Total: ~8 observations**
+
+7. **Handle missing opponent**:
+   - If opponent reference is null, add zero observations for opponent state
+   - Log warning in Editor but don't error in build
+   - This allows testing agent in non-training scenarios
+
+8. **Add observation validation**:
+   - In Editor mode, validate observation count matches expected
+   - Add Debug.Assert to catch mismatches during development
+   - Ensure all observations are in valid range (not NaN, not Infinity)
+   - Log any out-of-range values for debugging
+
+9. **Update PhysicsAgent.CollectObservations()**:
+   - Call helper methods from PhysicsAgentObservations
+   - Keep code clean and readable with clear sections for each observation category
+   - Add comments labeling each observation group
+   - Total observations should be ~50-60 (adjust as needed for your specific implementation)
+
+10. **Configure behavior parameters**:
+    - If using BehaviorParameters component, ensure:
+      - Vector Observation Space Size matches total observations
+      - Stacked Vectors = 1 (no frame stacking initially)
+      - Vector Action Space Type = Continuous
+      - Vector Action Space Size = will be set in Task 5
 
 **Verification Checklist:**
-- [ ] Attacks fail when stamina insufficient
-- [ ] Attacks succeed when stamina sufficient
-- [ ] Stamina consumption occurs on attack initiation
-- [ ] Defensive actions (block) still work at 0 stamina
-- [ ] AI respects stamina limits (if applicable)
+- [ ] PhysicsAgentObservations.cs compiles without errors
+- [ ] All normalization methods tested (unit tests)
+- [ ] PhysicsAgent.CollectObservations() adds correct number of observations
+- [ ] No NaN or Infinity values in observations
+- [ ] Observation count matches BehaviorParameters configuration
+- [ ] Observations update correctly each decision step (verify in debugger)
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Characters/CharacterCombatTests.cs`
-
-Test cases:
-- Attack succeeds when stamina available
-- Attack fails when stamina insufficient
-- Attack failure does not transition to AttackingState
-- Blocking works at 0 stamina
+- Write unit tests in `Assets/Knockout/Tests/EditMode/PhysicsAgentObservationsTests.cs`:
+  - Test position normalization with various arena bounds
+  - Test velocity normalization at max speed
+  - Test angle normalization at 0°, 90°, 180°, 270°
+  - Test scalar normalization at min, max, middle values
+  - Test animation state encoding produces correct one-hot vector
+- Run tests to ensure all pass before committing
 
 **Commit Message Template:**
 ```
-feat(stamina): integrate stamina gating into combat
+feat(observations): implement comprehensive movement observation collection
 
-- Prevent attacks when stamina insufficient
-- Stamina consumed on attack initiation
-- Defensive actions remain free
-- Add OnAttackFailedNoStamina event
+- Created PhysicsAgentObservations utility class for normalization
+- Implemented self physics state observations (position, velocity, CoM, etc.)
+- Implemented opponent state observations (position, velocity, attack state)
+- Implemented spatial relationship observations (distance, relative position, angle)
+- Implemented game context observations (health, round state, time)
+- Added observation validation to catch NaN/Infinity values
+- Configured BehaviorParameters with correct observation space size
+- Added unit tests for all normalization methods
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~5,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Create ExhaustedState Combat State
+## Task 5: Implement Movement Actions
 
-**Goal:** Implement exhaustion penalty state triggered when stamina depletes to 0.
+**Goal:** Define and interpret continuous actions for physics-based movement control including direction, speed, and turning.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Combat/States/ExhaustedState.cs` - Combat state class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
 
 **Prerequisites:**
-- Task 3 complete (CharacterStamina fires OnStaminaDepleted)
-- Review existing combat states (IdleState, BlockingState) for pattern
-- Review `CombatStateMachine.cs` for state management
+- Task 4 completed (observations implemented)
+- Review Phase 0 ADR-006 for action space design
+- Understanding of continuous action space
 
 **Implementation Steps:**
 
-1. Create `ExhaustedState` inheriting from `CombatState`
-2. Implement state lifecycle:
-   - `OnEnter()`: Trigger exhaustion animation (or reuse idle/tired animation), fire `OnExhaustedStart` event
-   - `OnUpdate()`: Track exhaustion duration timer
-   - `OnFixedUpdate()`: Check for recovery condition (stamina >= threshold)
-   - `OnExit()`: Fire `OnExhaustedEnd` event
-3. Prevent state transitions:
-   - Cannot transition to `AttackingState` while exhausted
-   - Can transition to `BlockingState`, `DodgingState` (defensive actions allowed)
-   - Can transition to `HitStunnedState` if hit
-4. Auto-recovery: transition back to `IdleState` when `CharacterStamina.StaminaPercentage >= StaminaData.ExhaustionRecoveryThreshold`
-5. Slower stamina regen: communicate to `CharacterStamina` to apply regen multiplier during exhaustion (via event or state query)
+1. **Create PhysicsAgentActions helper class**:
+   - Purpose: Interpret raw continuous actions from neural network
+   - Make it a static class with action interpretation methods
+   - Methods to implement:
+     - `ClampAction(float action, float min, float max)` → clamped float
+     - `ThresholdAction(float action, float threshold)` → boolean
+     - `MapAction(float action, float sourceMin, float sourceMax, float targetMin, float targetMax)` → mapped float
+   - Add XML documentation
 
-**Design Guidance:**
-- Follow ADR-003 (State Machine Integration)
-- Exhaustion is a vulnerable state but not helpless (can still defend)
-- Exhaustion duration can be minimum time before checking recovery
-- Animation: use existing "Idle_tired.fbx" or idle animation with slower speed
+2. **Design movement action space**:
+   - For Phase 1, focus only on movement actions (attack/defense in later phases)
+   - Continuous action vector (8 dimensions):
+     - **Movement X** (index 0): Left/right strafe, range [-1, 1]
+     - **Movement Z** (index 1): Back/forward, range [-1, 1]
+     - **Speed multiplier** (index 2): Movement speed, range [0, 1]
+     - **Turn rate** (index 3): Rotation speed, range [-1, 1]
+     - **Weight shift** (index 4): CoM shift forward/back, range [-1, 1]
+     - **Stance width** (index 5): Narrow to wide stance, range [0.5, 1.2]
+     - **CoM height** (index 6): Crouch to upright, range [0.7, 1.0]
+     - **Unused** (index 7): Reserved for future use, currently ignored
+   - Configure BehaviorParameters Vector Action Space Size = 8
+
+3. **Implement OnActionReceived override in PhysicsAgent**:
+   - Extract continuous actions from ActionBuffers parameter
+   - Store actions in private fields for use in FixedUpdate
+   - Don't apply actions immediately (will be applied in physics update)
+   - Example structure:
+     ```
+     var continuousActions = actions.ContinuousActions;
+     _movementX = continuousActions[0];
+     _movementZ = continuousActions[1];
+     // ... etc
+     ```
+
+4. **Create movement action interpretation logic**:
+   - Create private method `InterpretMovementActions()` in PhysicsAgent
+   - Clamp and process each action value:
+     - Clamp movement X and Z to [-1, 1]
+     - Clamp speed multiplier to [0, 1]
+     - Clamp turn rate to [-1, 1]
+     - Clamp physics parameters to valid ranges
+   - Create Vector2 for movement input from X and Z components
+   - Calculate actual turn angle from turn rate (-180 to 180 degrees/sec)
+   - Normalize movement vector if magnitude > 1 (prevents faster diagonal movement)
+
+5. **Apply movement via CharacterMovement component**:
+   - In FixedUpdate (physics timing):
+     - Call InterpretMovementActions()
+     - Pass movement Vector2 to CharacterMovement.SetMovementInput()
+     - Apply rotation via CharacterMovement.RotateToward() or direct transform.Rotate()
+     - Multiply movement by speed multiplier before applying
+   - Let existing CharacterMovement handle actual locomotion (leverage existing system)
+   - CharacterMovement should use Rigidbody for physics-based movement
+
+6. **Store actions in PhysicsAgent for physics controller use**:
+   - Add public properties to expose interpreted actions:
+     - `public Vector2 MovementInput { get; private set; }`
+     - `public float SpeedMultiplier { get; private set; }`
+     - `public float TurnRate { get; private set; }`
+     - `public float WeightShift { get; private set; }`
+     - `public float StanceWidth { get; private set; }`
+     - `public float CenterOfMassHeight { get; private set; }`
+   - Physics controllers (Task 6) will read these
+
+7. **Update Heuristic method**:
+   - Map keyboard input to action space for manual testing
+   - WASD → movement X and Z (-1 to 1)
+   - Left/Right arrows → turn rate
+   - Shift → speed boost (speed multiplier to 1.0, default 0.7)
+   - Q/E → weight shift forward/back
+   - This allows testing movement system without training
+
+8. **Add action visualization for debugging**:
+   - In OnDrawGizmos:
+     - Draw movement vector as arrow from character
+     - Draw turn direction indicator
+     - Color code based on speed multiplier
+   - Helps visualize what actions agent is taking
+
+9. **Configure action space in BehaviorParameters**:
+   - Set Vector Action Space Type: Continuous
+   - Set Vector Action Space Size: 8 (for our 8 action dimensions)
+   - Ensure Continuous Actions size matches
 
 **Verification Checklist:**
-- [ ] State entered when stamina depletes
-- [ ] Cannot attack while exhausted
-- [ ] Can block/dodge while exhausted
-- [ ] Automatically exits when stamina recovers to threshold
-- [ ] Stamina regenerates slower during exhaustion
-- [ ] Events fire on enter/exit
+- [ ] PhysicsAgentActions.cs compiles without errors
+- [ ] BehaviorParameters action space configured correctly (8 continuous actions)
+- [ ] OnActionReceived extracts and stores actions without errors
+- [ ] Heuristic control works with keyboard input
+- [ ] Character moves when actions applied
+- [ ] Movement respects physics (momentum, collision)
+- [ ] No jittery or unstable movement
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Combat/ExhaustedStateTests.cs`
-
-Test cases:
-- State transitions to IdleState when recovery threshold met
-- CanTransitionTo() prevents AttackingState
-- CanTransitionTo() allows BlockingState
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Combat/ExhaustedStateTests.cs`
-
-Test cases:
-- Depleting stamina triggers ExhaustedState
-- Recovery to threshold exits ExhaustedState
-- Cannot attack while exhausted
-- Can block while exhausted
+- Unit tests in `Assets/Knockout/Tests/EditMode/PhysicsAgentActionsTests.cs`:
+  - Test ClampAction with values outside range
+  - Test ThresholdAction at boundary values
+  - Test MapAction with various ranges
+- Manual testing:
+  - Open TrainingArena scene
+  - Set PhysicsAgent to Heuristic mode (Behavior Type: Heuristic Only in BehaviorParameters)
+  - Enter Play mode and test keyboard controls
+  - Verify movement feels responsive
+  - Verify turning works correctly
+  - Verify speed multiplier affects movement speed
 
 **Commit Message Template:**
 ```
-feat(stamina): add ExhaustedState combat state
+feat(actions): implement movement action interpretation and execution
 
-- Triggered when stamina depletes to 0
-- Prevents attacking, allows defending
-- Auto-recovers when stamina threshold met
-- Slower stamina regeneration during exhaustion
+- Created PhysicsAgentActions utility class for action processing
+- Defined 8-dimensional continuous action space for movement
+- Implemented OnActionReceived to extract and store actions
+- Created InterpretMovementActions for action processing
+- Integrated with CharacterMovement for physics-based locomotion
+- Updated Heuristic method with full keyboard control mapping
+- Added action visualization in OnDrawGizmos for debugging
+- Configured BehaviorParameters with correct action space size
+- Added unit tests for action interpretation methods
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~7,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 6: Integrate ExhaustedState into CombatStateMachine
+## Task 6: Implement Movement Physics Controllers
 
-**Goal:** Wire ExhaustedState into state machine transition graph.
+**Goal:** Create physics controllers that apply forces and adjustments based on RL actions to achieve realistic weight transfer, momentum, and balance during movement.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Combat/CombatStateMachine.cs` - Add state and transitions
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/MovementController.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify to use controller)
 
 **Prerequisites:**
-- Task 5 complete (ExhaustedState exists)
-- Read `CombatStateMachine.cs` state registration and transition logic
+- Task 5 completed (actions interpreted)
+- Understanding of Unity physics (Rigidbody, forces, center of mass)
+- Review Phase 0 ADR-002 on physics-enhanced animation approach
 
 **Implementation Steps:**
 
-1. Register `ExhaustedState` in state machine initialization:
-   - Add state instance to state dictionary
-   - Set valid transitions from/to ExhaustedState
-2. Add transition trigger:
-   - Subscribe to `CharacterStamina.OnStaminaDepleted`
-   - Trigger transition to ExhaustedState on event
-3. Configure transition rules:
-   - From IdleState → ExhaustedState (on depletion)
-   - From AttackingState → ExhaustedState (if depletion during attack)
-   - From ExhaustedState → IdleState (on recovery)
-   - From ExhaustedState → HitStunnedState (if hit)
-   - From ExhaustedState → BlockingState (defensive allowed)
-4. Handle exhaustion during attack:
-   - If stamina depletes during attack recovery, queue ExhaustedState transition
-   - Or wait until attack completes, then transition
+1. **Create MovementController class**:
+   - Purpose: Applies physics forces to enhance animated movement with realistic weight and momentum
+   - Make it a separate component or embedded class in PhysicsAgent
+   - Serialized parameters for tuning:
+     - Movement force multiplier (how much force to apply for movement)
+     - Turn torque multiplier (how much torque for rotation)
+     - Weight shift magnitude (how much to offset center of mass)
+     - Balance restoration force (PD controller gains for maintaining balance)
+     - Friction coefficients (ground friction)
 
-**Design Guidance:**
-- Follow existing state registration pattern in CombatStateMachine
-- Exhaustion transition should be high priority (interrupts most actions)
-- Use state machine's event-driven transition system
+2. **Implement weight shifting**:
+   - Method: `ApplyWeightShift(Rigidbody rb, float shift)`
+   - Shift parameter comes from action space (-1 to 1)
+   - Shift center of mass forward/backward:
+     - Get current Rigidbody center of mass
+     - Calculate offset based on shift parameter (e.g., shift * 0.3 units forward)
+     - Apply offset to Rigidbody.centerOfMass
+   - This simulates leaning forward (aggressive) or back (defensive)
+   - Reset center of mass to default when shift is 0
+
+3. **Implement stance width adjustment**:
+   - Method: `ApplyStanceWidth(float width)`
+   - Width parameter from action space (0.5 to 1.2)
+   - Adjust CharacterController capsule radius or use IK to widen legs
+   - Wider stance = more stable but slower
+   - Narrower stance = less stable but more mobile
+   - Could be visual-only or affect physics stability threshold
+
+4. **Implement center of mass height control**:
+   - Method: `ApplyCenterOfMassHeight(float height)`
+   - Height parameter from action space (0.7 to 1.0)
+   - Lower CoM = more stable, better for defensive posture
+   - Higher CoM = less stable, better for quick movement
+   - Adjust Rigidbody.centerOfMass.y based on parameter
+
+5. **Implement movement force application**:
+   - Method: `ApplyMovementForce(Rigidbody rb, Vector2 movement Input, float speedMult)`
+   - Convert Vector2 input to world-space Vector3 direction
+   - Apply force to Rigidbody:
+     - `rb.AddForce(direction * movementForceMultiplier * speedMult, ForceMode.Force)`
+   - Add drag to simulate friction when not moving
+   - Cap maximum velocity to prevent unrealistic speeds
+
+6. **Implement turning torque**:
+   - Method: `ApplyTurningTorque(Rigidbody rb, float turnRate)`
+   - Calculate desired angular velocity from turn rate
+   - Apply torque around Y axis:
+     - `rb.AddTorque(Vector3.up * turnRate * turnTorqueMultiplier, ForceMode.Force)`
+   - Add angular drag to prevent spinning indefinitely
+   - Clamp angular velocity to max turn speed
+
+7. **Implement balance maintenance**:
+   - Method: `MaintainBalance(Rigidbody rb, Vector3 targetCoM)`
+   - PD (Proportional-Derivative) controller to keep center of mass over support base
+   - Calculate error: current CoM projection vs support polygon center
+   - Apply corrective force proportional to error and its derivative
+   - Prevents tipping over during movement
+   - Use Physics.Raycast to detect ground contact points
+
+8. **Integrate with PhysicsAgent**:
+   - In PhysicsAgent FixedUpdate:
+     - Create or get MovementController instance
+     - Pass interpreted actions to controller methods
+     - Apply weight shift, stance, CoM height
+     - Apply movement forces and turning torque
+     - Run balance maintenance
+   - Ensure this happens after action interpretation but during physics step
+
+9. **Tune physics parameters**:
+   - Start with conservative values and increase gradually:
+     - Movement force: 500-1000 Newtons
+     - Turn torque: 100-300 Nm
+     - Weight shift offset: 0.2-0.5 units
+     - Balance PD gains: Kp=100, Kd=10 (tune experimentally)
+   - Test in Heuristic mode to feel responsiveness
+   - Adjust Rigidbody mass (default 70kg) and drag values
+
+10. **Add safety constraints**:
+    - Clamp forces to maximum values to prevent physics explosions
+    - Detect if character tipped over (up vector angle > 45°) and reset
+    - Handle edge cases like null Rigidbody or disabled components
+    - Log warnings for invalid physics states
 
 **Verification Checklist:**
-- [ ] ExhaustedState registered in state machine
-- [ ] Transition to ExhaustedState on stamina depletion
-- [ ] Valid transitions configured (can block, can't attack)
-- [ ] Transition to IdleState on recovery
-- [ ] State machine remains stable with new state
+- [ ] MovementController.cs compiles without errors
+- [ ] Weight shift visibly affects character lean
+- [ ] Stance width adjustment visible (if implemented visually)
+- [ ] Movement feels natural with momentum
+- [ ] Turning has appropriate acceleration/deceleration
+- [ ] Character maintains balance during movement
+- [ ] No physics explosions or jittery behavior
+- [ ] Forces tuned for realistic movement speed
 
 **Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Combat/CombatStateMachineTests.cs` (if exists)
-
-Test cases:
-- State machine transitions to ExhaustedState on depletion event
-- Cannot transition to AttackingState while in ExhaustedState
-- Transition to IdleState when recovery condition met
+- Manual testing in TrainingArena with Heuristic mode:
+  - Move in all directions (forward, back, strafe left/right)
+  - Verify momentum carries character slightly after releasing input
+  - Test turning while moving (should feel smooth)
+  - Test weight shifting (character should lean visibly)
+  - Test rapid direction changes (should not be instant)
+  - Verify character doesn't tip over during normal movement
+- Play multiple episodes and observe movement naturalness
+- Compare to existing CharacterMovement behavior (should be similar or better)
 
 **Commit Message Template:**
 ```
-feat(stamina): integrate ExhaustedState into CombatStateMachine
+feat(physics-controllers): implement movement physics controllers
 
-- Register state and configure transitions
-- Subscribe to stamina depletion event
-- Enforce transition rules (no attacking while exhausted)
+- Created MovementController for physics-enhanced movement
+- Implemented weight shifting via center of mass manipulation
+- Implemented stance width and CoM height adjustments
+- Applied movement forces with momentum simulation
+- Applied turning torque with angular velocity control
+- Implemented PD controller for balance maintenance
+- Integrated controllers with PhysicsAgent FixedUpdate
+- Tuned initial physics parameters for natural movement feel
+- Added safety constraints to prevent physics instabilities
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
+**Estimated tokens:** ~12,000
 
 ---
 
-### Task 7: Create SpecialKnockdownState Combat State
+## Task 7: Implement Movement Reward Function
 
-**Goal:** Implement enhanced knockdown state for special moves (future Phase 4 integration).
+**Goal:** Design and implement reward signals that encourage natural, effective, physics-realistic movement behavior during RL training.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Combat/States/SpecialKnockdownState.cs` - Combat state class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify to calculate rewards)
 
 **Prerequisites:**
-- Review existing `KnockedDownState.cs` for pattern
-- Understand knockdown mechanics from existing codebase
+- Task 6 completed (physics controllers working)
+- Review Phase 0 ADR-007 on multi-objective reward design
+- Understanding of reward shaping for RL
 
 **Implementation Steps:**
 
-1. **Determine inheritance:**
-   - Read `KnockedDownState.cs` to check if it's designed for extension (virtual methods, protected fields)
-   - If extensible: Inherit from `KnockedDownState` and override recovery time/animation
-   - If not extensible: Inherit from `CombatState` and implement knockdown behavior from scratch
-   - Document choice in verification checklist
-2. Implement enhanced knockdown properties:
-   - Longer recovery time than normal knockdown (configurable)
-   - Enhanced animation (or reuse knockout animation with longer hold)
-   - Fire `OnSpecialKnockdown` event for VFX/audio hooks
-3. Implement state lifecycle:
-   - `OnEnter()`: Trigger special knockdown animation, start recovery timer
-   - `OnUpdate()`: Track recovery time
-   - `OnExit()`: Fire recovery event
-4. Transition to `IdleState` after recovery time elapses
-5. Allow early recovery on player input (if existing knockdown supports this)
+1. **Create PhysicsAgentRewards helper class**:
+   - Purpose: Encapsulates all reward calculation logic
+   - Instance class (not static, holds state between calls)
+   - Serialized parameters for reward weights:
+     - Combat effectiveness weight (default 0.4)
+     - Physical realism weight (default 0.2)
+     - Strategic depth weight (default 0.2)
+     - Player entertainment weight (default 0.2)
+   - Private fields to track previous state for derivative calculations
 
-**Design Guidance:**
-- This state is a placeholder for Phase 4 special moves
-- Differentiate from `KnockedDownState` via longer duration and enhanced presentation
-- Consider inheriting from `KnockedDownState` and overriding recovery time if architecture supports it
+2. **Implement reward component: Combat Effectiveness (for movement)**:
+   - For Phase 1, combat is limited (no attacks yet), focus on positioning:
+     - **Optimal Range Reward** (+0.05 per frame): Agent maintains 1.5-2.5 units from opponent
+       - Check distance to opponent
+       - If in range, add small positive reward
+       - Encourages staying in effective fighting range
+     - **Approach Reward** (+0.02 per frame): Agent closes distance if too far (>3.5 units)
+     - **Space Reward** (+0.02 per frame): Agent creates distance if too close (<1.0 units)
+   - Method: `CalculateCombatEffectivenessReward()` → float
+
+3. **Implement reward component: Physical Realism**:
+   - **Balance Reward** (+0.01 per frame):
+     - Check if center of mass is over support base (feet position)
+     - Calculate support polygon from foot positions
+     - Reward if CoM projection is within polygon
+     - Method: `IsBalanced()` → bool
+   - **Smooth Movement Reward** (+0.02 per frame):
+     - Penalize excessive acceleration changes (jerk)
+     - Calculate acceleration derivative between frames
+     - Reward if jerk magnitude is below threshold
+     - Encourages smooth, natural movement
+   - **Grounded Reward** (+0.01 per frame):
+     - Check if feet are in contact with ground (Physics.Raycast)
+     - Reward for maintaining ground contact (no floating)
+   - **Weight Transfer Reward** (+0.03 per frame):
+     - During movement, weight should shift appropriately
+     - Check if weight shift action aligns with movement direction
+     - Reward correlation between forward movement and forward weight shift
+   - Method: `CalculatePhysicalRealismReward()` → float
+
+4. **Implement reward component: Strategic Depth (for movement)**:
+   - **Spacing Control Reward** (+0.05 per frame):
+     - Reward for actively adjusting distance to opponent
+     - Detect intentional approach or retreat (movement toward/away from opponent)
+     - Penalize standing still (-0.02 per frame of no movement)
+   - **Footwork Variety Reward** (+0.1 per 2 seconds):
+     - Track movement patterns (circling, strafing, advancing, retreating)
+     - Reward if multiple patterns used within time window
+     - Prevents repetitive movement
+   - **Defensive Positioning** (+0.05 per frame):
+     - Reward for facing opponent while moving
+     - Penalize if facing away from opponent
+   - Method: `CalculateStrategicDepthReward()` → float
+
+5. **Implement reward component: Player Entertainment (for movement)**:
+   - **Movement Activity Reward** (+0.05 per frame):
+     - Reward for dynamic movement (not standing still)
+     - Encourage active footwork and engagement
+   - **Arena Utilization Reward** (+0.02 per frame):
+     - Reward for using different areas of arena
+     - Penalize if staying in one spot too long
+     - Track position history and calculate variance
+   - **Engagement Reward** (+0.1 per frame):
+     - Reward for staying in close-mid range of opponent
+     - Creates more exciting fights than long-range dancing
+   - Method: `CalculatePlayerEntertainmentReward()` → float
+
+6. **Implement sparse milestone rewards**:
+   - **Episode Length Bonus**:
+     - Reward longer episodes (survived without going out of bounds)
+     - +1.0 if episode lasts > 30 seconds
+     - Discourages self-terminating behaviors
+   - **Exploration Bonus**:
+     - One-time reward for discovering new movement patterns
+     - Track visited state-action pairs
+     - +0.5 for novel states (encourages diverse movement during early training)
+
+7. **Combine reward components**:
+   - In PhysicsAgent, add method `CalculateReward()`:
+     - Get individual reward components from PhysicsAgentRewards
+     - Apply weights to each component
+     - Sum weighted components
+     - Clamp total reward to reasonable range (e.g., -1.0 to +1.0 per step)
+   - Call AddReward() with calculated reward value each decision step
+   - For debugging, log individual components to track which rewards are active
+
+8. **Handle episode end rewards**:
+   - In OnEpisodeBegin or when episode ends naturally:
+     - Add sparse milestone rewards
+     - Reset reward tracking state in PhysicsAgentRewards
+   - If character goes out of bounds: large negative reward (-5.0) and EndEpisode()
+   - If episode times out naturally: small positive reward (+0.5) for survival
+
+9. **Implement reward normalization**:
+   - Track running mean and std dev of rewards (optional but recommended)
+   - Normalize rewards to have roughly zero mean and unit variance
+   - Helps with training stability
+   - Use exponential moving average for statistics
+
+10. **Add reward debugging tools**:
+    - In Editor, add gizmos showing:
+      - Optimal range visualization (draw sphere around opponent)
+      - Balance polygon (support base)
+      - Recent reward magnitude (color-coded)
+    - Add debug UI text showing current reward breakdown
+    - Log reward components to CSV for analysis (optional)
 
 **Verification Checklist:**
-- [ ] State can be triggered (manually for now, special moves will trigger in Phase 4)
-- [ ] Recovery time configurable and longer than normal knockdown
-- [ ] Transitions to IdleState after recovery
-- [ ] Events fire for VFX/audio integration
+- [ ] PhysicsAgentRewards.cs compiles without errors
+- [ ] All reward components calculate without NaN or Infinity
+- [ ] Reward values are in reasonable range (-1 to 1 per step typically)
+- [ ] Agent receives positive reward for desired behaviors in Heuristic mode
+- [ ] Reward weights sum to meaningful values (don't need to sum to 1.0)
+- [ ] Sparse rewards trigger correctly at episode boundaries
+- [ ] Debug visualization shows reward components clearly
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Combat/SpecialKnockdownStateTests.cs`
-
-Test cases:
-- State enters and triggers animation
-- Recovery timer expires and transitions to IdleState
-- OnSpecialKnockdown event fires on enter
+- Unit tests in `Assets/Knockout/Tests/EditMode/PhysicsAgentRewardsTests.cs`:
+  - Test IsBalanced() with various CoM configurations
+  - Test reward calculation with mock states
+  - Test reward clamping at extremes
+  - Test weight application math
+- Manual testing in Heuristic mode:
+  - Move to optimal range and observe positive rewards
+  - Stand still and observe negative rewards (passive penalty)
+  - Perform smooth movement and observe physical realism rewards
+  - Check that total cumulative reward increases with good play
 
 **Commit Message Template:**
 ```
-feat(knockdown): add SpecialKnockdownState for enhanced knockdowns
+feat(rewards): implement multi-objective movement reward function
 
-- Longer recovery time than normal knockdown
-- Enhanced animation support
-- Prepare for Phase 4 special moves integration
+- Created PhysicsAgentRewards class for reward calculation
+- Implemented combat effectiveness rewards (optimal range, positioning)
+- Implemented physical realism rewards (balance, smooth movement, grounding)
+- Implemented strategic depth rewards (spacing control, footwork variety)
+- Implemented player entertainment rewards (activity, arena utilization)
+- Added sparse milestone rewards for episode completion
+- Integrated reward calculation into PhysicsAgent decision loop
+- Added reward component weights for tuning
+- Implemented reward debugging visualization and logging
+- Added unit tests for reward calculation logic
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~5,000
+**Estimated tokens:** ~14,000
 
 ---
 
-### Task 8: Integrate SpecialKnockdownState into CombatStateMachine
+## Task 8: Create Training Configuration
 
-**Goal:** Register SpecialKnockdownState in state machine for future use.
+**Goal:** Configure ML-Agents training hyperparameters in YAML file to train the movement agent effectively via self-play.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Combat/CombatStateMachine.cs` - Add state registration
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Config/movement_training.yaml` (new)
+- `Assets/Knockout/Training/Config/README.md` (new, explains config parameters)
 
 **Prerequisites:**
-- Task 7 complete (SpecialKnockdownState exists)
+- Task 7 completed (reward function implemented)
+- All previous tasks completed
+- Familiarity with ML-Agents configuration format
 
 **Implementation Steps:**
 
-1. Register `SpecialKnockdownState` in state machine initialization
-2. Configure valid transitions:
-   - From AttackingState → SpecialKnockdownState (when hit by special move)
-   - From SpecialKnockdownState → IdleState (on recovery)
-   - From SpecialKnockdownState → KnockedOutState (if health depleted)
-3. Add public method `TriggerSpecialKnockdown()` for hit detection to call (Phase 4 will use this)
+1. **Create training config directory**:
+   - Create `Assets/Knockout/Training/Config/` folder
+   - This will store all training configurations for each phase
 
-**Design Guidance:**
-- State exists but won't be actively used until Phase 4
-- Provide clean API for future special move hit detection
+2. **Create movement_training.yaml**:
+   - Reference Phase 0 training configuration template
+   - Configure for movement-only training
+   - Structure:
+     ```yaml
+     behaviors:
+       PhysicsAgent:
+         trainer_type: ppo
+         hyperparameters:
+           # PPO hyperparameters
+         network_settings:
+           # Neural network architecture
+         reward_signals:
+           # Reward configuration
+         self_play:
+           # Self-play specific settings
+         checkpoint_settings:
+           # Checkpoint saving
+         # Other settings
+     ```
+
+3. **Configure PPO hyperparameters**:
+   - `batch_size: 2048` - Number of experiences per gradient descent update
+     - Larger = more stable but slower
+     - Good starting point for continuous control
+   - `buffer_size: 20480` - Total experiences before updating (should be multiple of batch_size)
+     - buffer_size / batch_size = number of epochs
+   - `learning_rate: 3e-4` - Step size for gradient descent
+     - Standard for PPO, can decrease if training unstable
+     - Use linear schedule to decrease over time
+   - `beta: 5e-3` - Entropy bonus coefficient
+     - Encourages exploration
+     - Higher = more exploration, lower = more exploitation
+   - `epsilon: 0.2` - PPO clip range
+     - Standard value, controls policy update magnitude
+   - `lambd: 0.95` - GAE (Generalized Advantage Estimation) lambda
+     - Balance between bias and variance in advantage estimation
+   - `num_epoch: 3` - Number of passes through experience buffer
+     - More epochs = more learning per experience but slower
+   - `learning_rate_schedule: linear` - Decay learning rate over time
+
+4. **Configure network architecture**:
+   - `normalize: true` - Automatically normalize observations (use built-in normalization)
+   - `hidden_units: 256` - Size of hidden layers
+     - Larger = more capacity but slower and harder to train
+     - 256 is good balance for this task
+   - `num_layers: 2` - Number of hidden layers
+     - 2 layers sufficient for most tasks
+     - Deeper networks may overfit on limited data
+   - `vis_encode_type: simple` - Not using visual observations, but required field
+   - `activation: tanh` - Activation function (tanh good for continuous control)
+
+5. **Configure reward signals**:
+   - Extrinsic reward (our custom reward function):
+     ```yaml
+     extrinsic:
+       gamma: 0.99      # Discount factor (how much to value future rewards)
+       strength: 1.0    # Scaling factor for extrinsic rewards
+     ```
+   - Optionally add curiosity (intrinsic reward) if agent doesn't explore:
+     ```yaml
+     curiosity:
+       gamma: 0.99
+       strength: 0.01   # Small contribution from curiosity
+       encoding_size: 256
+     ```
+
+6. **Configure self-play settings**:
+   - `save_steps: 50000` - Save opponent snapshot every N steps
+     - Saves previous policy versions for agent to play against
+   - `team_change: 200000` - Change opponent every N steps
+     - Ensures agent faces variety of opponent skill levels
+   - `swap_steps: 10000` - Swap sides every N steps
+     - Prevents positional bias
+   - `window: 10` - Keep last N opponent snapshots
+     - Larger window = more diverse opponents but more memory
+   - `play_against_latest_model_ratio: 0.5` - 50% vs latest, 50% vs historical
+     - Balance between facing current skill level and maintaining past skills
+   - `initial_elo: 1200.0` - Starting ELO rating for skill tracking
+
+7. **Configure checkpoint and training settings**:
+   - `keep_checkpoints: 5` - Number of checkpoints to retain
+   - `max_steps: 5000000` - Total training steps (5 million)
+     - Adjust based on how long you can train (5M might take several hours)
+     - Start smaller for testing (e.g., 500k)
+   - `time_horizon: 1000` - Steps before forcing end of episode for advantage calculation
+     - Set to max episode length or longer
+   - `summary_freq: 10000` - How often to write TensorBoard summaries
+     - More frequent = finer grain monitoring but slower
+   - `checkpoint_interval: 500000` - Save checkpoint every N steps
+
+8. **Set training command line arguments** (document in README):
+   - Base command:
+     ```bash
+     mlagents-learn Assets/Knockout/Training/Config/movement_training.yaml --run-id=movement_phase1 --time-scale=20
+     ```
+   - Flags:
+     - `--run-id`: Unique identifier for this training run (creates folder in results/)
+     - `--time-scale`: Speed up Unity time (20x faster, adjust for your hardware)
+     - `--num-envs`: Number of parallel environments (auto-detected from scene)
+     - `--resume`: Continue from previous checkpoint if training interrupted
+     - `--force`: Overwrite existing run with same ID
+
+9. **Create training config README**:
+   - Explain each hyperparameter and when to adjust it
+   - Provide troubleshooting guide:
+     - If reward doesn't increase: decrease learning rate, check reward function
+     - If training unstable: decrease batch size, learning rate
+     - If agent doesn't explore: increase entropy beta, add curiosity
+     - If training too slow: increase time-scale, reduce environments, simplify network
+   - Include expected training time estimates
+   - Link to ML-Agents documentation for deeper dive
+
+10. **Validate YAML syntax**:
+    - Use YAML linter to check for syntax errors
+    - Ensure indentation is correct (spaces, not tabs)
+    - Verify all required fields present
+    - Test load config with: `mlagents-learn <config_path> --help`
 
 **Verification Checklist:**
-- [ ] SpecialKnockdownState registered
-- [ ] Transitions configured
-- [ ] Public trigger method available
-- [ ] State machine stable with new state
+- [ ] movement_training.yaml has valid YAML syntax
+- [ ] All required ML-Agents fields present
+- [ ] Hyperparameters are reasonable starting values
+- [ ] Self-play configuration included
+- [ ] README.md documents all parameters clearly
+- [ ] Training command documented and tested
 
 **Testing Instructions:**
-
-Update EditMode test: `Assets/Knockout/Tests/EditMode/Combat/CombatStateMachineTests.cs`
-
-Test cases:
-- State machine includes SpecialKnockdownState
-- Valid transitions configured
-- TriggerSpecialKnockdown() transitions to correct state
+- Run config validation:
+  ```bash
+  mlagents-learn Assets/Knockout/Training/Config/movement_training.yaml --help
+  ```
+  - Should display help text without errors
+  - If errors, check YAML syntax and field names
+- Don't start full training yet (will do in Task 9)
 
 **Commit Message Template:**
 ```
-feat(knockdown): integrate SpecialKnockdownState into state machine
+feat(training): create movement training configuration
 
-- Register state and configure transitions
-- Add public trigger method for future special moves
+- Created movement_training.yaml with PPO hyperparameters
+- Configured network architecture (2 layers, 256 units)
+- Set up self-play settings for competitive learning
+- Configured reward signals (extrinsic with gamma=0.99)
+- Set checkpoint and summary frequencies
+- Created Config/README.md with parameter explanations
+- Documented training command and common troubleshooting
+- Validated YAML syntax and required fields
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 9: Create Default StaminaData Asset
+## Task 9: Execute Training and Evaluate Movement Agent
 
-**Goal:** Create a default stamina configuration asset for testing and as template.
+**Goal:** Run the ML-Agents training process, monitor progress, and evaluate the trained agent's movement behavior to ensure it learns natural footwork.
 
-**Files to Create:**
-- `Assets/Knockout/Data/Stamina/DefaultStamina.asset` - ScriptableObject instance
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Results/` - Training outputs directory (auto-created)
+- `Assets/Knockout/Training/Models/movement_phase1.onnx` - Exported trained model
+- `docs/TRAINING_LOG.md` - Training session notes and results
 
 **Prerequisites:**
-- Task 1 complete (StaminaData ScriptableObject exists)
+- Tasks 1-8 completed (entire training pipeline ready)
+- Python environment activated with mlagents installed
+- TrainingArena scene configured and tested
+- Sufficient time for training (plan for 2-4 hours minimum)
 
 **Implementation Steps:**
 
-1. In Unity Editor: Create > Knockout > Stamina Data
-2. Name: "DefaultStamina"
-3. Configure with balanced default values from DD-001:
-   - Max Stamina: 100
-   - Regen Per Second: 25
-   - Attack Costs: [10 (Jab), 15 (Hook), 20 (Uppercut)]
-   - Special Move Cost: 40
-   - Exhaustion Duration: 2.0s
-   - Exhaustion Regen Multiplier: 0.5
-   - Exhaustion Recovery Threshold: 25
-4. Save in `Assets/Knockout/Data/Stamina/` directory (create if needed)
-5. Document in asset description field (if exists)
+1. **Pre-training validation**:
+   - Open TrainingArena scene in Unity
+   - Verify all environments spawn correctly
+   - Check PhysicsAgent Behavior Name = "PhysicsAgent" (must match YAML)
+   - Ensure BehaviorParameters set to "Default" (not Heuristic Only)
+   - Save scene
 
-**Design Guidance:**
-- This asset serves as template for character-specific customization
-- Values match design document DD-001 balanced tuning
+2. **Start training session**:
+   - Activate Python environment: `source ml-agents-env/bin/activate` (or your env name)
+   - Navigate to project root in terminal
+   - Run training command:
+     ```bash
+     mlagents-learn Assets/Knockout/Training/Config/movement_training.yaml --run-id=movement_phase1 --time-scale=20
+     ```
+   - When prompted "Start training by pressing the Play button in the Unity Editor", click Play in Unity
+   - Training should begin - you'll see log output in terminal
+
+3. **Monitor training progress**:
+   - **Watch terminal output**:
+     - Check that environments initialize correctly
+     - Look for "Connected new brain" message
+     - Monitor step count increasing
+     - Watch for any errors or warnings
+   - **Open TensorBoard** (in new terminal):
+     ```bash
+     tensorboard --logdir=results/movement_phase1
+     ```
+     - Navigate to `http://localhost:6006` in browser
+     - Key metrics to watch:
+       - **Environment/Cumulative Reward**: Should trend upward (agent improving)
+       - **Environment/Episode Length**: May increase as agent learns to survive longer
+       - **Losses/Policy Loss**: Should decrease over time
+       - **Policy/Entropy**: Should decrease (agent becoming more confident)
+       - **Policy/Learning Rate**: Should decrease linearly if using schedule
+
+4. **Early training validation** (first 100k steps):
+   - After ~15-30 minutes, check if learning is happening:
+     - Cumulative reward should be increasing (even if slowly)
+     - Agents should show some intentional behavior (not purely random)
+     - No NaN or Inf values in losses
+   - If no improvement after 100k steps:
+     - Check reward function (are agents getting any positive rewards?)
+     - Verify observations are normalized correctly
+     - Consider decreasing learning rate or increasing exploration (beta)
+   - You can stop training (Ctrl+C) and resume later with `--resume` flag
+
+5. **Mid-training checkpoints** (every 500k steps):
+   - Training saves checkpoints automatically to `results/movement_phase1/PhysicsAgent/`
+   - Load checkpoint in Unity to test:
+     - Copy `.onnx` file to `Assets/Knockout/Training/Models/`
+     - In PhysicsAgent BehaviorParameters, set Model to the .onnx file
+     - Set Behavior Type to "Inference Only"
+     - Enter Play mode and observe agent behavior
+     - Evaluate: Does movement look natural? Is agent approaching opponent? Maintaining balance?
+   - If behavior looks good, consider stopping training early
+   - If behavior poor, continue training or adjust hyperparameters
+
+6. **Training duration decisions**:
+   - **Minimum**: 1-2 million steps (~1-2 hours) for basic movement
+   - **Recommended**: 3-5 million steps (~2-4 hours) for polished movement
+   - **Stop early if**:
+     - Cumulative reward plateaus for 500k+ steps
+     - Agent demonstrates desired behavior consistently
+     - You're satisfied with movement quality
+   - **Train longer if**:
+     - Reward still increasing steadily
+     - Agent behavior still improving noticeably
+     - You want more robust/diverse movement patterns
+
+7. **Complete training run**:
+   - When ready to finish, stop Unity and press Ctrl+C in terminal
+   - Final model saved to `results/movement_phase1/PhysicsAgent/PhysicsAgent.onnx`
+   - Copy final model to `Assets/Knockout/Training/Models/movement_phase1.onnx`
+   - Git track the .onnx file (it's binary but worth keeping in repo)
+
+8. **Evaluation and testing**:
+   - **Quantitative evaluation**:
+     - Final cumulative reward value
+     - Average episode length
+     - Compare to random policy baseline (if you collected)
+   - **Qualitative evaluation**:
+     - Load model in TrainingArena
+     - Watch several episodes
+     - Evaluate against criteria:
+       - [ ] Agents move naturally with visible momentum
+       - [ ] Agents approach opponent when far away
+       - [ ] Agents maintain fighting range (1.5-2.5 units)
+       - [ ] Agents show footwork variety (circling, strafing, etc.)
+       - [ ] Agents maintain balance (no tipping over)
+       - [ ] Movement looks realistic (weight transfer visible)
+       - [ ] Agents don't exhibit degenerate strategies (spinning, running away, etc.)
+   - **Document findings**:
+     - Create `docs/TRAINING_LOG.md`
+     - Record training parameters, duration, final metrics
+     - Note any issues encountered and solutions
+     - Include qualitative observations of behavior
+     - Add screenshots or video if helpful
+
+9. **Model integration test**:
+   - Test trained model in main gameplay scene (not training scene):
+     - Open main GameplayTest scene
+     - Create character with PhysicsAgent component
+     - Assign movement_phase1.onnx model
+     - Set Behavior Type to Inference Only
+     - Verify agent works in gameplay context
+     - Check performance (FPS should remain high)
+
+10. **Troubleshooting common issues**:
+    - **Reward not increasing**:
+      - Check reward function in Heuristic mode (are you getting rewards for good behavior?)
+      - Verify observations are normalized correctly (check for NaN)
+      - Try decreasing learning rate or increasing batch size
+    - **Training unstable (NaN losses)**:
+      - Check for NaN in observations or actions
+      - Decrease learning rate significantly
+      - Check physics for explosions (forces too high)
+    - **Agents not exploring**:
+      - Increase entropy beta (e.g., from 0.005 to 0.01)
+      - Add curiosity reward signal
+    - **Training too slow**:
+      - Increase time-scale (but not above 100, causes instability)
+      - Reduce number of parallel environments
+      - Simplify neural network (fewer layers or units)
+    - **Unity crashes during training**:
+      - Reduce time-scale
+      - Reduce parallel environments
+      - Check for physics explosions or errors in code
 
 **Verification Checklist:**
-- [ ] Asset created successfully
-- [ ] Values match design spec defaults
-- [ ] Asset can be assigned to CharacterStamina component
+- [ ] Training runs without errors
+- [ ] TensorBoard shows increasing cumulative reward
+- [ ] No NaN or Inf values in training metrics
+- [ ] Trained model loads correctly in Unity
+- [ ] Agent exhibits natural-looking movement
+- [ ] Agent approaches and maintains range to opponent
+- [ ] Agent maintains balance and doesn't tip over
+- [ ] Movement shows physics-based momentum
+- [ ] Model performs well in both training and gameplay scenes
+- [ ] Training results documented in TRAINING_LOG.md
 
 **Testing Instructions:**
-
-Manual testing:
-- Assign DefaultStamina to character in scene
-- Enter play mode
-- Verify stamina values display correctly in Inspector (debug view)
+- Manual evaluation of trained model:
+  - Load model in TrainingArena scene
+  - Run 10+ episodes and observe behavior
+  - Rate movement naturalness on scale of 1-10
+  - Note any undesirable behaviors
+  - Compare to behavioral AI movement (should be similar or better)
+- Performance testing:
+  - Measure FPS in gameplay scene with trained agent
+  - Should maintain 60fps with single agent
+  - Inference time per decision should be <1ms
 
 **Commit Message Template:**
 ```
-feat(stamina): add default StaminaData asset
+feat(training): train and validate movement agent via self-play
 
-- Configured with balanced default values
-- Template for character-specific customization
+- Executed training run for 3M steps over 3 hours
+- Monitored training progress via TensorBoard
+- Achieved final cumulative reward of X.X
+- Exported trained model as movement_phase1.onnx
+- Validated agent demonstrates natural physics-based movement
+- Verified agent maintains optimal fighting range
+- Confirmed balance and momentum behaviors learned
+- Documented training process and results in TRAINING_LOG.md
+- Integrated model into main gameplay scene successfully
+- Tested inference performance (60fps maintained)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~2,000
-
----
-
-### Task 10: Update Character Prefab with Stamina Components
-
-**Goal:** Add stamina system to base character prefab for testing.
-
-**Files to Modify:**
-- `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` - Add components
-
-**Prerequisites:**
-- Task 3 complete (CharacterStamina component exists)
-- Task 9 complete (DefaultStamina asset exists)
-
-**Implementation Steps:**
-
-1. Open BaseCharacter prefab
-2. Add `CharacterStamina` component
-3. Assign dependencies:
-   - Character Controller (auto-find or manual)
-   - Stamina Data: DefaultStamina asset
-   - Character Combat (auto-find or manual)
-4. Ensure component initialization order:
-   - CharacterStamina initializes after CharacterCombat
-   - Update CharacterController if it manages initialization order
-5. Test in play mode
-
-**Design Guidance:**
-- Follow existing component setup pattern in prefab
-- CharacterController should initialize all components
-
-**Verification Checklist:**
-- [ ] CharacterStamina component added to prefab
-- [ ] Dependencies assigned correctly
-- [ ] Component initializes without errors in play mode
-- [ ] Stamina system functional in gameplay test
-
-**Testing Instructions:**
-
-Manual testing:
-- Open scene with character
-- Enter play mode
-- Perform attacks, observe stamina depletion
-- Wait idle, observe stamina regeneration
-- Deplete stamina fully, verify exhaustion state
-
-**Commit Message Template:**
-```
-feat(stamina): add stamina components to character prefab
-
-- Add CharacterStamina component
-- Assign DefaultStamina configuration
-- Integrate into component initialization
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 11: Add Stamina Regeneration Modifier System
-
-**Goal:** Allow CharacterStamina to modify regeneration rate based on character state (e.g., exhaustion).
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterStamina.cs` - Add regen modifier
-
-**Prerequisites:**
-- Task 3 complete (CharacterStamina exists)
-- Task 5 complete (ExhaustedState exists)
-
-**Implementation Steps:**
-
-1. Add private field `regenRateMultiplier` (default 1.0)
-2. Modify regeneration calculation in `FixedUpdate()`:
-   - `regenAmount = StaminaData.RegenPerSecond * regenRateMultiplier * Time.fixedDeltaTime`
-3. Add public method `SetRegenMultiplier(float multiplier)`:
-   - Allows external systems to modify regen rate
-   - Clamp multiplier to [0, 2] range (reasonable bounds)
-4. Subscribe to ExhaustedState enter/exit events (or query CombatStateMachine state):
-   - On enter exhaustion: `SetRegenMultiplier(StaminaData.ExhaustionRegenMultiplier)`
-   - On exit exhaustion: `SetRegenMultiplier(1.0)`
-5. Add public method `ResetRegenMultiplier()` to restore default
-
-**Design Guidance:**
-- Modifier system allows future extensions (buffs, debuffs, special states)
-- Multiple modifiers could be additive or multiplicative (start with single multiplier)
-- Exhaustion applies via this system
-
-**Verification Checklist:**
-- [ ] Regeneration rate modifiable at runtime
-- [ ] Exhaustion applies slower regen multiplier
-- [ ] Exiting exhaustion restores normal regen
-- [ ] Multiplier clamped to valid range
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Stamina/CharacterStaminaTests.cs`
-
-Test cases:
-- SetRegenMultiplier affects regeneration rate
-- Exhaustion state reduces regen rate
-- Exiting exhaustion restores normal regen
-- Multiplier clamped to [0, 2]
-
-**Commit Message Template:**
-```
-feat(stamina): add regeneration rate modifier system
-
-- Support dynamic regen rate adjustments
-- Apply slower regen during exhaustion
-- Extensible for future buffs/debuffs
-```
-
-**Estimated Tokens:** ~4,000
-
----
-
-### Task 12: Comprehensive Integration Testing
-
-**Goal:** Verify all Phase 1 systems work together correctly in gameplay scenarios.
-
-**Files to Create:**
-- `Assets/Knockout/Tests/PlayMode/Integration/StaminaIntegrationTests.cs` - Integration tests
-
-**Prerequisites:**
-- All previous tasks complete
-
-**Implementation Steps:**
-
-1. Create integration test suite covering end-to-end stamina flow:
-   - Test: Full stamina depletion and recovery cycle
-   - Test: Attack spam until exhaustion
-   - Test: Exhaustion prevents attacks but allows blocking
-   - Test: Stamina regeneration during idle
-   - Test: No stamina regen during attack
-   - Test: Attack costs vary by attack type
-   - Test: Special knockdown state triggered (manually for now)
-2. Test multi-character scenarios:
-   - Both characters have independent stamina
-   - Stamina states don't interfere
-3. Test edge cases:
-   - Stamina exactly at attack cost (attack succeeds)
-   - Stamina 0.1 below attack cost (attack fails)
-   - Hitting character during exhaustion
-   - Rapid state transitions
-
-**Design Guidance:**
-- Use UnityTest coroutines for time-based tests
-- Test realistic gameplay flows, not just isolated component behavior
-- Verify events fire in correct order
-
-**Verification Checklist:**
-- [ ] All integration tests pass
-- [ ] Stamina system functional in gameplay
-- [ ] No errors or warnings in console
-- [ ] Performance acceptable (60fps maintained)
-
-**Testing Instructions:**
-
-Run all tests:
-- EditMode tests (Window > General > Test Runner > EditMode)
-- PlayMode tests (Window > General > Test Runner > PlayMode)
-- All tests green
-
-**Commit Message Template:**
-```
-test(stamina): add comprehensive integration tests
-
-- Test end-to-end stamina flow
-- Verify exhaustion mechanics
-- Test multi-character scenarios
-- Cover edge cases and state transitions
-```
-
-**Estimated Tokens:** ~10,000
-
----
-
-### Task 13: Documentation and Code Cleanup
-
-**Goal:** Document stamina system, clean up debug code, finalize Phase 1.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/STAMINA_SYSTEM.md` - System documentation
-
-**Files to Modify:**
-- All Phase 1 scripts - Remove debug logs, finalize comments
-
-**Prerequisites:**
-- All previous tasks complete
-- All tests passing
-
-**Implementation Steps:**
-
-1. Create STAMINA_SYSTEM.md documentation:
-   - System overview
-   - How to configure stamina for characters
-   - How to customize attack costs
-   - How exhaustion works
-   - Integration points for other systems
-   - Troubleshooting common issues
-2. Review all Phase 1 scripts:
-   - Remove `Debug.Log` statements used during development
-   - Ensure XML comments on all public methods/properties
-   - Verify naming conventions followed
-   - Check for unused code/fields
-3. Update main README.md with stamina system summary (if project has one)
-
-**Design Guidance:**
-- Documentation should help future developers extend or debug the system
-- Include examples of common configurations
-- Link to relevant design decisions from Phase 0
-
-**Verification Checklist:**
-- [ ] STAMINA_SYSTEM.md created and comprehensive
-- [ ] All debug logs removed
-- [ ] XML comments complete
-- [ ] No compiler warnings
-- [ ] Code follows project style guide
-
-**Testing Instructions:**
-
-Final checks:
-- Build project (verify no build errors)
-- Run all tests (verify all pass)
-- Review code in pull request format
-
-**Commit Message Template:**
-```
-docs(stamina): add system documentation and cleanup
-
-- Create STAMINA_SYSTEM.md guide
-- Remove debug logging
-- Finalize XML documentation
-- Code cleanup and polish
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
----
-
-## Review Feedback (Iteration 1)
-
-### Task 9: Default StaminaData Asset
-
-> **Consider:** Running `ls -la Assets/Knockout/Data/Stamina/` shows the directory doesn't exist. Did Task 9 get completed?
->
-> **Think about:** Where would a character get its stamina configuration if no default asset exists? Would the game break in Unity Editor when trying to assign stamina data to a character?
->
-> **Reflect:** Task 9 specifies "Create DefaultStamina.asset in Assets/Knockout/Data/Stamina/ (create directory if needed)". What command would you use to verify this asset exists?
-
-### Task 10: Character Prefab Integration
-
-> **Consider:** The plan requires adding CharacterStamina component to BaseCharacter.prefab. How can you verify this was done?
->
-> **Think about:** Running `find Assets/Knockout/Prefabs -name "*.prefab"` returns no results. Does the Prefabs directory exist? Should you check if the prefab is in a different location?
->
-> **Reflect:** If you open Unity Editor and inspect BaseCharacter prefab, would you see the CharacterStamina component with DefaultStamina assigned? How would you verify this without opening Unity?
-
-### Excellent Work
-
-The core implementation is outstanding:
-- ✓ All scripts well-written (verified with Read tool)
-- ✓ Comprehensive tests (210 lines in StaminaDataTests.cs alone)
-- ✓ Documentation exists (STAMINA_SYSTEM.md)
-- ✓ Conventional commits followed (verified with `git log`)
-- ✓ Proper validation and error handling
-
-**Next Steps:** Address the asset creation and prefab integration questions above, then this phase will be ready for approval.
+**Estimated tokens:** ~15,000
 
 ---
 
 ## Phase 1 Verification
 
-**Completion Checklist:**
-- [ ] All 13 tasks completed
-- [ ] All tests passing (EditMode + PlayMode)
-- [ ] Stamina system functional in gameplay
-- [ ] Exhaustion state working correctly
-- [ ] SpecialKnockdownState integrated (ready for Phase 4)
-- [ ] Character prefab updated with stamina components
-- [ ] Documentation complete
-- [ ] Code reviewed and cleaned
-- [ ] No console errors or warnings
-- [ ] Performance target maintained (60fps, Profiler shows CharacterStamina < 0.1ms per frame, no GC allocations during gameplay)
+Complete this checklist before proceeding to Phase 2:
 
-**Integration Points for Next Phase:**
-- `CharacterStamina` component available for other systems to query/modify
-- `OnStaminaChanged` event available for UI (Phase 5)
-- `HasStamina(cost)` method available for special moves (Phase 4)
-- `ExhaustedState` integrated into combat flow
-- `SpecialKnockdownState` ready for special move hits (Phase 4)
+### Training Infrastructure
+- [ ] ML-Agents Python package installed and functional
+- [ ] Unity ML-Agents package integrated
+- [ ] TrainingArena scene with 8+ parallel environments operational
+- [ ] Self-play configuration tested (two agents fight each other)
+- [ ] Training runs without errors for at least 30 minutes
 
-**Known Limitations:**
-- Stamina UI not implemented (Phase 5)
-- Special moves don't consume stamina yet (Phase 4)
-- AI doesn't consider stamina in decisions (post-Phase 5, AI enhancement)
-- No stamina recovery on round end (consider for future balancing)
+### PhysicsAgent Implementation
+- [ ] PhysicsAgent component inherits from Unity.MLAgents.Agent correctly
+- [ ] Observation collection gathers ~50-60 normalized observations
+- [ ] Action space configured for 8 continuous movement actions
+- [ ] Heuristic mode allows keyboard control for testing
+- [ ] Episode reset functionality working (position, health, velocity reset)
+
+### Physics Controllers
+- [ ] Movement forces applied realistically with momentum
+- [ ] Weight shifting affects center of mass visibly
+- [ ] Stance width and CoM height adjustments functional
+- [ ] Turning uses torque with smooth acceleration
+- [ ] Balance maintenance prevents tipping over
+- [ ] No physics explosions or jittery movement
+
+### Reward Function
+- [ ] Multi-objective reward calculation implemented
+- [ ] Combat effectiveness rewards (optimal range positioning)
+- [ ] Physical realism rewards (balance, smooth movement, grounding)
+- [ ] Strategic depth rewards (spacing control, footwork variety)
+- [ ] Player entertainment rewards (active movement, engagement)
+- [ ] Sparse milestone rewards for episode completion
+- [ ] Reward values in reasonable range (-1 to 1 per step)
+
+### Training Results
+- [ ] Training completed for at least 1M steps
+- [ ] Cumulative reward increased over training
+- [ ] Trained model exported as .onnx file
+- [ ] Agent demonstrates natural-looking movement
+- [ ] Agent approaches opponent and maintains fighting range
+- [ ] Agent shows footwork variety (not repetitive)
+- [ ] Agent maintains balance during movement
+- [ ] No degenerate strategies exhibited
+
+### Integration and Performance
+- [ ] Trained model loads in gameplay scene correctly
+- [ ] Inference maintains 60fps in gameplay
+- [ ] Agent integrates with existing character systems
+- [ ] No errors in console during agent operation
+- [ ] Training process documented in TRAINING_LOG.md
+
+### Known Limitations / Technical Debt
+Document any issues to address in future phases:
+- Movement may be overly cautious (can tune aggression in Phase 2)
+- Limited opponent reactivity (no attacks yet to respond to)
+- Physics parameters may need fine-tuning for different character models
+- Self-play may have converged to local optima (consider curriculum or opponent diversity later)
 
 ---
 
-## Next Phase
+## Next Steps
 
-After Phase 1 completion and verification, proceed to:
+After Phase 1 completion:
+- **[Phase 2: Attack Execution](Phase-2.md)** - Add physics-based punching with force application and weight transfer
+- Ensure you have the trained movement model saved before proceeding
+- Phase 2 will build on this model using transfer learning
 
-**[Phase 2: Advanced Defense](Phase-2.md)**
+---
 
-Implement dodging with i-frames and timed parry system.
+## Appendix: Quick Reference
+
+### Key Files Created
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs`
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs`
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs`
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs`
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/MovementController.cs`
+- `Assets/Knockout/Scripts/Training/TrainingEnvironment.cs`
+- `Assets/Knockout/Scripts/Training/EpisodeManager.cs`
+- `Assets/Knockout/Scenes/Training/TrainingArena.unity`
+- `Assets/Knockout/Training/Config/movement_training.yaml`
+- `Assets/Knockout/Training/Models/movement_phase1.onnx`
+- `docs/ML_AGENTS_SETUP.md`
+- `docs/TRAINING_LOG.md`
+
+### Training Command
+```bash
+mlagents-learn Assets/Knockout/Training/Config/movement_training.yaml --run-id=movement_phase1 --time-scale=20
+```
+
+### TensorBoard Command
+```bash
+tensorboard --logdir=results/movement_phase1
+```
+
+### Resume Training Command
+```bash
+mlagents-learn Assets/Knockout/Training/Config/movement_training.yaml --run-id=movement_phase1 --resume
+```

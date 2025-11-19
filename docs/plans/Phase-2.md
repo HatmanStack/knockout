@@ -1,1160 +1,741 @@
-# Phase 2: Advanced Defense
+# Phase 2: Attack Execution
 
 ## Phase Goal
 
-Implement advanced defensive mechanics: directional dodging with invincibility frames (i-frames) and timed parry system. These systems add skill-based defensive options beyond basic blocking, rewarding precise timing and creating counterattack opportunities.
+Extend the trained movement agent with physics-based attack execution. The agent will learn to throw jabs, hooks, and uppercuts with realistic weight transfer, force application, and timing. By the end of this phase, agents will engage in dynamic striking exchanges with physically accurate punch mechanics.
 
 **Success Criteria:**
-- Directional dodge system (left, right, back) with i-frame invincibility window
-- Timed parry system that negates damage and staggers attacker
-- Dodge and parry animations integrated
-- Existing block system unchanged and coexists with new mechanics
-- All systems configurable via ScriptableObjects
-- 85%+ test coverage for new components
+- Attack actions added to PhysicsAgent action space
+- Attack observations include opponent vulnerability and attack opportunities
+- Physics controllers apply forces during punches for weight transfer
+- Attack reward function encourages effective striking
+- Agent trains via self-play and learns when/how to attack
+- Trained agent lands hits, varies punch types, and shows realistic striking form
 
-**Estimated Tokens:** ~100,000
-
----
+**Estimated tokens:** ~85,000
 
 ## Prerequisites
 
-**Required Reading:**
-- [Phase 0: Foundation](Phase-0.md) - Architecture decisions and patterns
-- [Phase 1: Core Resource Systems](Phase-1.md) - Stamina system (dodge/parry are stamina-free)
-
-**Existing Systems to Understand:**
-- `CharacterInput` - Input handling (Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs)
-- `CharacterMovement` - Movement system (Assets/Knockout/Scripts/Characters/Components/CharacterMovement.cs)
-- `CombatStateMachine` - State management (Assets/Knockout/Scripts/Combat/CombatStateMachine.cs)
-- `BlockingState` - Existing defensive state (Assets/Knockout/Scripts/Combat/States/BlockingState.cs)
-- Hit detection system (Assets/Knockout/Scripts/Combat/HitDetection/)
-
-**Available Assets:**
-- Dodge animations: `left_dodge.fbx`, `right_dodge.fbx` (in `Assets/Knockout/Animations/Characters/BaseCharacter/AnimationClips/`)
-- Block animations: `Block.fbx`, `Idle_to_Block.fbx` (existing, will be used for parry timing)
-
-**Environment:**
-- Unity 2021.3.8f1 LTS
-- Input System 1.4.4
+- Phase 0 completed (architecture foundation)
+- Phase 1 completed (movement agent trained and working)
+- `movement_phase1.onnx` model available for transfer learning
+- Existing CharacterCombat system understood
+- AttackData ScriptableObjects exist for jab, hook, uppercut
 
 ---
 
-## Tasks
+## Task 1: Expand Observation Space for Attacks
 
-### Task 1: Create DodgeData ScriptableObject
+**Goal:** Add observations that help the agent decide when and how to attack.
 
-**Goal:** Define dodge configuration data including i-frame timing and movement properties.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/DodgeData.cs` - ScriptableObject class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (modify)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
 
 **Prerequisites:**
-- Review `StaminaData.cs` for ScriptableObject pattern
-- Understand frame-based timing from ADR-004
+- Phase 1 observations working correctly
+- Understanding of attack timing and ranges
 
 **Implementation Steps:**
 
-1. Create `DodgeData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Dodge Data"` (order = 4)
-3. Define serialized fields:
-   - Dodge duration frames (total animation length)
-   - i-frame start frame (when invincibility begins)
-   - i-frame duration frames (how long invincibility lasts)
-   - Dodge distance (how far character moves)
-   - Dodge speed multiplier (movement speed during dodge)
-   - Cooldown frames (optional: prevent dodge spam)
-4. Expose public read-only properties
-5. Implement `OnValidate()` to ensure i-frame window fits within dodge duration
-6. Add XML documentation and tooltips
-7. Add helper properties: `DodgeDuration` (frames to seconds), `IFrameStartTime`, `IFrameDuration`
+1. **Add attack opportunity observations** (~8 new observations):
+   - Opponent vulnerability (boolean): Is opponent in recovery/hit-stun/attacking?
+   - Opponent guard state (boolean): Is opponent blocking?
+   - Attack range for jab (boolean): Within jab range (shorter)
+   - Attack range for hook (boolean): Within hook range (medium)
+   - Attack range for uppercut (boolean): Within uppercut range (close)
+   - Time since self's last attack (normalized): Prevents spam, encourages timing
+   - Opponent's recent movement direction (2D vector): Predict where opponent is moving
+   - Relative velocity to opponent (normalized): Closing or separating?
 
-**Design Guidance:**
-- Follow DD-003 (Dodge & Parry Design) from Phase 0
-- Default values:
-  - Total duration: 18 frames (~0.3s at 60fps)
-  - i-frame start: 2 frames (almost immediate)
-  - i-frame duration: 8 frames (~0.133s, 40% of total)
-  - Dodge distance: 1.5 units
-  - Cooldown: 12 frames (~0.2s to prevent spam)
-- i-frames are early in dodge (first 40%), vulnerable during recovery
+2. **Add attack cooldown observations** (~3 observations):
+   - Jab cooldown remaining (normalized to attack duration)
+   - Hook cooldown remaining
+   - Uppercut cooldown remaining
+   - Get from CharacterCombat component
+
+3. **Add opponent attack prediction observations** (~4 observations):
+   - Opponent's attack windup detection (boolean): Is opponent starting attack animation?
+   - Opponent's attack type being thrown (one-hot 3D: jab/hook/uppercut)
+   - Time until opponent attack lands (normalized): Helps with defensive reactions (Phase 4)
+
+4. **Update total observation count**:
+   - Previous Phase 1 observations: ~54
+   - New attack observations: ~15
+   - New total: ~69 observations
+   - Update BehaviorParameters Vector Observation Space Size to 69
+
+5. **Integrate new observations in CollectObservations()**:
+   - Add new observation section clearly labeled "Attack Opportunity Observations"
+   - Maintain observation order consistency
+   - Normalize all continuous values properly
 
 **Verification Checklist:**
-- [ ] ScriptableObject appears in Create menu
-- [ ] OnValidate ensures i-frame window valid (start + duration <= total duration)
-- [ ] Frame-to-second conversions correct (60fps)
-- [ ] All fields have tooltips and XML docs
+- [ ] Observation space size updated to ~69 in BehaviorParameters
+- [ ] New observations calculated correctly without errors
+- [ ] Opponent vulnerability detection working (test in Heuristic mode)
+- [ ] Attack range booleans accurate (verify distances)
+- [ ] No NaN values in new observations
 
 **Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Defense/DodgeDataTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate clamps i-frame start to valid range
-- OnValidate prevents i-frame duration exceeding total duration
-- Frame-to-second conversion correct (18 frames = 0.3s)
-- Default values match design spec
+- Unit tests for attack range calculations
+- Manual testing: verify attack opportunity observations update correctly as characters move
+- Verify observations in TensorBoard during training (check ranges)
 
 **Commit Message Template:**
 ```
-feat(defense): add DodgeData ScriptableObject
+feat(observations): add attack opportunity observations
 
-- Define dodge timing and movement properties
-- Frame-based timing for i-frame precision
-- Validation ensures consistent configuration
+- Added opponent vulnerability and guard state observations
+- Added attack range booleans for jab/hook/uppercut
+- Added attack cooldown tracking observations
+- Added opponent attack prediction observations
+- Updated observation space size to 69 dimensions
+- Integrated new observations in CollectObservations
+- Added unit tests for attack range detection
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~7,000
 
 ---
 
-### Task 2: Extend Input System for Dodge Actions
+## Task 2: Expand Action Space for Attacks
 
-**Goal:** Add dodge input actions (left, right, back) to Input System.
+**Goal:** Add continuous attack actions to control punch selection, timing, and force.
 
-**Files to Modify:**
-- `Assets/Knockout/Input/KnockoutInputActions.inputactions` - Add dodge actions (if using .inputactions asset)
-- OR `Assets/Knockout/Scripts/Input/` - Generate dodge input bindings
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (modify)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
 
 **Prerequisites:**
-- Review existing input setup (check `Assets/Knockout/Scripts/Input/INPUT_SYSTEM_SETUP.md`)
-- Understand current input binding structure (likely using InputActions asset)
+- Task 1 completed (attack observations added)
+- Phase 1 movement actions working
 
 **Implementation Steps:**
 
-1. Open KnockoutInputActions asset (or equivalent)
-2. Add new action map or extend existing "Gameplay" map:
-   - Action: `DodgeLeft` (button binding, e.g., Q or Left Arrow)
-   - Action: `DodgeRight` (button binding, e.g., E or Right Arrow)
-   - Action: `DodgeBack` (button binding, e.g., S or Down Arrow)
-3. Configure as button actions (Press interaction)
-4. Regenerate C# input class if using auto-generation
-5. Update `CharacterInput` to expose dodge input events or properties
+1. **Expand action space** from 8 to 15 continuous actions:
+   - **Movement actions** (indices 0-7): Unchanged from Phase 1
+   - **Attack type** (index 8): Continuous [0, 1] discretized to 4 options:
+     - 0.00-0.25: No attack
+     - 0.25-0.50: Jab
+     - 0.50-0.75: Hook
+     - 0.75-1.00: Uppercut
+   - **Attack hand** (index 9): Continuous [0, 1] discretized to left (0-0.5) or right (0.5-1.0)
+   - **Attack force multiplier** (index 10): Continuous [0.5, 1.5] - intensity of punch
+   - **Attack timing offset** (index 11): Continuous [-0.1, 0.1] seconds - early/late attack
+   - **Follow-through intensity** (index 12): Continuous [0, 1] - how much to commit to punch
+   - **Unused** (indices 13-14): Reserved for future phases
 
-**Design Guidance:**
-- Dodge is directional, not just generic "dodge" button
-- Consider gamepad mapping (left stick + dodge button combo, or face buttons)
-- PC defaults: Q (left), E (right), S (back) - or customize based on existing scheme
-- Input should be responsive (no hold requirement, instant on press)
+2. **Update BehaviorParameters**:
+   - Set Vector Action Space Size to 15
+
+3. **Implement attack action interpretation**:
+   - In OnActionReceived, extract attack actions (indices 8-12)
+   - Store in private fields for execution in FixedUpdate
+   - Discretize attack type using threshold logic
+   - Map force multiplier to valid range
+   - Clamp all values appropriately
+
+4. **Create attack execution logic**:
+   - In FixedUpdate, check if attack action requested
+   - Verify attack can execute (not in cooldown, not already attacking)
+   - Call CharacterCombat methods:
+     - ExecuteJab(isLeftHand, forceMultiplier)
+     - ExecuteHook(isLeftHand, forceMultiplier)
+     - ExecuteUppercut(isLeftHand, forceMultiplier)
+   - May need to extend CharacterCombat to accept force multiplier parameter
+
+5. **Handle attack state**:
+   - Track if attack is currently executing
+   - Prevent movement during attack (set movement input to zero or reduced)
+   - Allow agent to queue next action during attack recovery
+
+6. **Update Heuristic method**:
+   - Map keyboard to attack actions:
+     - Q/E: Jab left/right
+     - 1/2: Hook left/right
+     - Z/C: Uppercut left/right
+   - Shift held: Increase force multiplier
+   - Allows manual testing of attack system
 
 **Verification Checklist:**
-- [ ] Dodge actions added to Input Actions asset
-- [ ] Bindings configured for keyboard
-- [ ] (Optional) Bindings configured for gamepad
-- [ ] C# input class regenerated (if applicable)
-- [ ] No conflicts with existing inputs
+- [ ] Action space size updated to 15 in BehaviorParameters
+- [ ] Attack type discretization works correctly
+- [ ] Attacks execute via CharacterCombat
+- [ ] Force multiplier affects attack damage/force
+- [ ] Heuristic control allows manual attack testing
+- [ ] Attack cooldowns respected
 
 **Testing Instructions:**
-
-Manual testing in Unity Editor:
-- Open Input Actions asset
-- Verify dodge actions present
-- Test bindings in play mode with Input Debugger
+- Manual testing in Heuristic mode:
+  - Execute each attack type with keyboard
+  - Verify attacks trigger animations
+  - Verify hits register on opponent
+  - Test force multiplier affects hit impact
+- Unit tests for action discretization logic
 
 **Commit Message Template:**
 ```
-feat(defense): add dodge input actions
+feat(actions): add attack execution actions
 
-- Add DodgeLeft, DodgeRight, DodgeBack actions
-- Configure keyboard bindings
-- Integrate into Input System
+- Expanded action space from 8 to 15 continuous actions
+- Added attack type selection (none/jab/hook/uppercut)
+- Added attack hand selection (left/right)
+- Added attack force multiplier and timing offset
+- Added follow-through intensity control
+- Implemented attack action interpretation and execution
+- Integrated with CharacterCombat system
+- Updated Heuristic method with attack key bindings
+- Extended CharacterCombat to accept force parameters
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~3,000
+**Estimated tokens:** ~8,000
 
 ---
 
-### Task 3: Update CharacterInput for Dodge Inputs
+## Task 3: Implement Attack Physics Controllers
 
-**Goal:** Expose dodge input events in CharacterInput component for other systems to consume.
+**Goal:** Create physics controllers that apply forces during attacks for realistic weight transfer, punch velocity, and follow-through.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterInput.cs` - Add dodge events
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsControllers/AttackController.cs` (new)
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify to use controller)
 
 **Prerequisites:**
-- Task 2 complete (dodge input actions exist)
-- Review `CharacterInput.cs` structure
+- Task 2 completed (attack actions added)
+- Understanding of punch biomechanics (weight shift, rotation, arm extension)
 
 **Implementation Steps:**
 
-1. Add public events for dodge inputs:
-   - `public event Action OnDodgeLeftInput;`
-   - `public event Action OnDodgeRightInput;`
-   - `public event Action OnDodgeBackInput;`
-2. In input callback handlers (or Update/FixedUpdate if polling):
-   - Detect dodge input presses
-   - Fire corresponding events
-3. Ensure dodge inputs only fire when character can act (not knocked down, not in special state)
-4. Add input buffering if existing system supports it (optional, nice-to-have)
+1. **Create AttackController class**:
+   - Serialized parameters:
+     - Punch force magnitude (base force for different punch types)
+     - Weight transfer speed (how fast to shift CoM during punch)
+     - Torso rotation amount (body twist during hook/uppercut)
+     - Follow-through distance
+     - Recovery force (return to neutral stance)
 
-**Design Guidance:**
-- Follow existing input event pattern (like OnAttackInput, OnBlockInput)
-- Dodge events fire on button press, not hold
-- Input should be responsive (immediate feedback)
+2. **Implement weight transfer during attacks**:
+   - Method: `ApplyAttackWeightTransfer(AttackType type, float intensity)`
+   - For jab: Quick weight shift forward (CoM moves toward front foot)
+   - For hook: Lateral weight shift + torso rotation
+   - For uppercut: Dip then rise (lower CoM then raise during punch)
+   - Use Rigidbody.centerOfMass to shift weight
+   - Apply over duration of attack animation
+
+3. **Implement punch force application**:
+   - Method: `ApplyPunchForce(Rigidbody rb, AttackData attack, float multiplier)`
+   - Apply forward force to Rigidbody during active frames of attack
+   - Force direction based on punch type:
+     - Jab: Straight forward
+     - Hook: Arc (lateral component)
+     - Uppercut: Upward angle
+   - Magnitude based on attack damage * force multiplier
+   - Add slight forward momentum to character (step into punch)
+
+4. **Implement torso rotation for hooks**:
+   - Method: `ApplyTorsoRotation(float angle)`
+   - Rotate torso/spine bone (if using humanoid rig) during hook
+   - Or apply torque to Rigidbody
+   - Adds rotational power to hook punches
+   - Reset rotation during recovery
+
+5. **Implement follow-through mechanics**:
+   - Method: `ApplyFollowThrough(float intensity)`
+   - After hit/miss, arm continues forward briefly
+   - Higher intensity = more committed, longer recovery
+   - Lower intensity = safer, quicker recovery
+   - Affects recovery time before next action
+
+6. **Implement recovery physics**:
+   - Method: `ApplyRecoveryForce()`
+   - Return weight to center after attack
+   - Reset CoM to neutral position
+   - Apply restoring force using PD controller
+   - Smooth transition back to idle/movement state
+
+7. **Synchronize with animations**:
+   - Use animation events or track animation progress
+   - Apply physics forces at key moments:
+     - Weight shift: Start of attack animation
+     - Punch force: Active frames (when hitbox active)
+     - Follow-through: After contact/miss
+     - Recovery: After attack animation completes
+   - Blend physics forces with animation motion
+
+8. **Integrate with PhysicsAgent**:
+   - In FixedUpdate, when attack executing:
+     - Get attack type and parameters from interpreted actions
+     - Call AttackController methods at appropriate times
+     - Track attack state (windup, active, follow-through, recovery)
+
+9. **Tune force magnitudes**:
+   - Start conservative and increase:
+     - Jab force: 300-500N forward
+     - Hook force: 400-600N with rotation
+     - Uppercut force: 500-800N with upward component
+   - Weight shift: 0.3-0.5 units forward
+   - Test in Heuristic mode for feel
 
 **Verification Checklist:**
-- [ ] Dodge events fire on input
-- [ ] Events don't fire when character incapacitated
-- [ ] No input conflicts with existing actions
-- [ ] Events fire only once per press (no spam)
+- [ ] AttackController.cs compiles without errors
+- [ ] Weight transfer visible during attacks
+- [ ] Punch forces applied during active frames
+- [ ] Torso rotation visible during hooks
+- [ ] Follow-through affects recovery timing
+- [ ] Recovery returns character to neutral
+- [ ] Physics forces blend smoothly with animations
+- [ ] No physics explosions or instability
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Characters/CharacterInputTests.cs` (update existing)
-
-Test cases:
-- OnDodgeLeftInput fires when left dodge pressed
-- OnDodgeRightInput fires when right dodge pressed
-- OnDodgeBackInput fires when back dodge pressed
-- Dodge inputs ignored when knocked down
+- Manual testing in Heuristic mode:
+  - Throw each punch type, observe weight shift
+  - Verify visible lean/rotation during hooks
+  - Check that character recovers to neutral after attack
+  - Test varying force multiplier (shift key in Heuristic)
+  - Ensure physics feels natural and responsive
 
 **Commit Message Template:**
 ```
-feat(defense): expose dodge input events in CharacterInput
+feat(physics-controllers): implement attack physics controllers
 
-- Add OnDodgeLeft/Right/Back events
-- Fire on button press
-- Integrate with existing input handling
+- Created AttackController for physics-based striking
+- Implemented weight transfer during attacks (forward shift for jabs, rotation for hooks)
+- Applied punch forces to Rigidbody during active frames
+- Added torso rotation mechanics for hooks
+- Implemented follow-through and recovery physics
+- Synchronized physics forces with attack animations
+- Integrated AttackController with PhysicsAgent FixedUpdate
+- Tuned force magnitudes for realistic punch feel
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~4,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 4: Create DodgingState Combat State
+## Task 4: Implement Attack Reward Function
 
-**Goal:** Implement dodge state with i-frame invincibility and directional movement.
+**Goal:** Design rewards that encourage effective, varied, and realistic attacking behavior.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Combat/States/DodgingState.cs` - Combat state class
+**Files to Modify/Create:**
+- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (modify)
 
 **Prerequisites:**
-- Task 1 complete (DodgeData exists)
-- Review existing combat states for pattern
-- Understand hit detection system (how to make character invulnerable)
+- Task 3 completed (attack physics working)
+- Phase 1 movement rewards understood
 
 **Implementation Steps:**
 
-1. Create `DodgingState` inheriting from `CombatState`
-2. Implement state lifecycle:
-   - `OnEnter(DodgeDirection direction)`: Store dodge direction, trigger animation, start i-frame timer, fire `OnDodgeStarted` event
-   - `OnUpdate()`: Track dodge timer (frame count)
-   - `OnFixedUpdate()`: Apply dodge movement (directional), check for dodge completion
-   - `OnExit()`: Fire `OnDodgeEnded` event, restore hurtbox vulnerability
-3. Implement i-frame invincibility:
-   - Track current frame in dodge animation
-   - During i-frame window (start frame to start + duration), disable hurtbox or set invulnerable flag
-   - Outside i-frame window, character is vulnerable
-   - Communicate with hit detection system (likely via public property `IsInvulnerable`)
-4. Implement directional movement:
-   - Calculate movement direction based on dodge direction and character facing
-   - Apply movement impulse or velocity override
-   - Move character `DodgeData.DodgeDistance` over dodge duration
-5. Auto-transition to `IdleState` when dodge completes (frame count >= total duration)
-6. Create enum `DodgeDirection { Left, Right, Back }` for direction parameter
+1. **Add combat effectiveness rewards for attacking**:
+   - **Hit Landed Reward** (+1.0 per hit):
+     - Positive reward when attack connects with opponent
+     - Scale by damage dealt (higher damage = more reward)
+     - Bonus for critical hits or knockdowns
+   - **Attack Accuracy Reward** (+0.2 per successful hit):
+     - Ratio of hits landed to attacks thrown
+     - Encourages attacking when high probability of success
+   - **Damage Dealt Reward** (+damage/max_health):
+     - Reward proportional to health removed
+     - Encourages high-value attacks (uppercuts > jabs)
+   - **Hit Received Penalty** (-0.5 per hit taken):
+     - Negative reward when opponent hits agent
+     - Encourages defense (Phase 4) and avoiding hits
 
-**Design Guidance:**
-- Follow ADR-003 (State Machine Integration)
-- Follow ADR-004 (Frame-Perfect Timing)
-- i-frames are a property check, not a separate collider state
-- Movement should feel snappy (front-loaded speed curve, or constant speed)
-- Animation plays for full duration, movement may complete earlier
+2. **Add physical realism rewards for attacks**:
+   - **Weight Transfer Reward** (+0.05 per attack):
+     - Check if weight shifted correctly for punch type
+     - Jab should shift forward, hook should rotate, etc.
+     - Reward if CoM motion matches attack type
+   - **Attack Timing Reward** (+0.03 per well-timed attack):
+     - Reward for attacking when opponent vulnerable
+     - Penalize attacking when opponent is blocking or out of range
+   - **Follow-Through Reward** (+0.02 per attack):
+     - Reward for appropriate follow-through intensity
+     - Too much = long recovery (bad)
+     - Too little = weak punch (bad)
+     - Optimal around 0.6-0.8 intensity
+
+3. **Add strategic depth rewards for attacks**:
+   - **Attack Variety Reward** (+0.1 per 5 seconds):
+     - Track recent attack types used
+     - Reward if multiple types used in window
+     - Prevents spamming single attack type
+   - **Combo Potential Reward** (+0.2 per combo):
+     - Reward for landing multiple hits in quick succession
+     - Encourages pressure and aggressive play
+   - **Punish Opponent's Mistakes** (+0.3):
+     - Extra reward for hitting opponent during their attack recovery
+     - Teaches counterattacking concept
+
+4. **Add player entertainment rewards for attacks**:
+   - **Close Combat Reward** (+0.1 per frame in striking range):
+     - Reward both fighters for engaging in close-range combat
+     - Encourages exciting exchanges over passive play
+   - **Back-and-Forth Reward** (+0.5):
+     - Reward when both fighters land hits in same episode
+     - Creates dynamic, competitive fights
+   - **Aggressive Play Reward** (+0.05 per attack thrown):
+     - Small reward for throwing attacks (even if miss)
+     - Prevents overly passive AI
+     - Balance with accuracy to avoid mindless spam
+
+5. **Add sparse milestone rewards**:
+   - **First Blood** (+2.0): Land first hit of the round
+   - **Knockout Bonus** (+20.0): Reduce opponent health to zero
+   - **Perfect Round** (+10.0): Win round without taking damage
+   - **Comeback Victory** (+5.0): Win from low health (<30%)
+
+6. **Update reward combination logic**:
+   - Adjust weights to balance movement and attack rewards:
+     - Combat effectiveness: 0.5 (increased from 0.4)
+     - Physical realism: 0.2 (same)
+     - Strategic depth: 0.2 (same)
+     - Player entertainment: 0.1 (decreased from 0.2)
+   - Movement is less critical now, combat more important
+
+7. **Handle opponent defeated scenario**:
+   - When opponent health reaches zero:
+     - Large positive reward to winner (+50.0)
+     - Large negative reward to loser (-50.0)
+     - End episode for both agents
+   - Reset environment for new episode
+
+8. **Add reward debugging**:
+   - Log individual reward components for attack behaviors
+   - Visualize attack reward contributions separately from movement
+   - Track hit accuracy, combo counts, attack variety metrics
 
 **Verification Checklist:**
-- [ ] Dodge state entered successfully
-- [ ] Dodge animation plays
-- [ ] Character moves in correct direction
-- [ ] i-frame invincibility functional (verified via hit test)
-- [ ] Auto-transitions to IdleState on completion
-- [ ] Events fire correctly
+- [ ] Hit landed rewards trigger correctly
+- [ ] Hit received penalties apply properly
+- [ ] Attack variety tracking works over time windows
+- [ ] Combo detection counts sequential hits
+- [ ] Sparse milestone rewards fire at correct times
+- [ ] Reward balance feels appropriate (not dominated by one component)
+- [ ] Total reward values remain in reasonable range
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/DodgingStateTests.cs`
-
-Test cases:
-- Entering DodgingState triggers animation
-- IsInvulnerable true during i-frame window
-- IsInvulnerable false outside i-frame window
-- Character moves in correct direction
-- State transitions to IdleState after duration
-- OnDodgeStarted and OnDodgeEnded events fire
+- Manual testing in Heuristic mode:
+  - Land hits and observe positive rewards
+  - Get hit and observe negative rewards
+  - Vary attack types and verify variety reward
+  - Land combos and check combo rewards
+- Verify reward logging in TensorBoard during training
 
 **Commit Message Template:**
 ```
-feat(defense): implement DodgingState with i-frames
+feat(rewards): implement attack execution reward function
 
-- Directional dodge movement (left/right/back)
-- i-frame invincibility window
-- Frame-based timing for precision
-- Auto-transition to IdleState on completion
+- Added combat effectiveness rewards (hits landed, damage dealt, accuracy)
+- Added physical realism rewards (weight transfer, timing, follow-through)
+- Added strategic depth rewards (variety, combos, punishing mistakes)
+- Added player entertainment rewards (close combat, back-and-forth)
+- Added sparse milestone rewards (first blood, knockout, perfect round)
+- Updated reward weight balance to emphasize combat
+- Implemented opponent defeated scenario handling
+- Added attack-specific reward debugging and logging
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~10,000
+**Estimated tokens:** ~10,000
 
 ---
 
-### Task 5: Create CharacterDodge Component
+## Task 5: Update Training Configuration for Attacks
 
-**Goal:** Manage dodge execution, cooldown, and orchestrate dodge state transitions.
+**Goal:** Modify training config to account for expanded observation/action space and attack-focused rewards.
 
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterDodge.cs` - Component class
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Config/attack_training.yaml` (new, based on movement_training.yaml)
 
 **Prerequisites:**
-- Task 1 complete (DodgeData exists)
-- Task 3 complete (CharacterInput dodge events)
-- Task 4 complete (DodgingState exists)
+- Task 4 completed (attack rewards implemented)
+- Phase 1 training config understood
 
 **Implementation Steps:**
 
-1. Create `CharacterDodge` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern:
-   - Dependencies: `CharacterController`, `DodgeData`, `CharacterInput`, `CombatStateMachine`
-   - `Initialize()` method
-   - Subscribe to dodge input events in `Initialize()`
-3. Implement dodge execution:
-   - On dodge input event, check if dodge available (not on cooldown, character in valid state)
-   - Trigger `CombatStateMachine` transition to `DodgingState(direction)`
-   - Start cooldown timer
-4. Implement cooldown tracking:
-   - Track frames since last dodge
-   - Property `CanDodge` returns true if cooldown expired and state allows
-   - Fire `OnDodgeReady` event when cooldown completes (for UI feedback)
-5. Add public method `TryDodge(DodgeDirection direction)` for manual triggering (AI can use)
-6. Expose properties: `IsDodging`, `CanDodge`, `CooldownProgress` (0-1 for UI)
+1. **Create attack_training.yaml**:
+   - Copy `movement_training.yaml` as base
+   - Modify for attack training specifics
 
-**Design Guidance:**
-- Dodge doesn't consume stamina (defensive action is free)
-- Cooldown prevents dodge spam (small cooldown, ~0.2s)
-- Cannot dodge while attacking, knocked down, or already dodging
+2. **Update hyperparameters for increased complexity**:
+   - `batch_size: 4096` (increased from 2048 due to more complex behavior)
+   - `buffer_size: 40960` (10x batch size)
+   - `learning_rate: 2e-4` (slightly decreased for stability)
+   - `beta: 8e-3` (increased entropy for attack exploration)
+   - `max_steps: 7000000` (more steps for attack learning)
+
+3. **Update network architecture**:
+   - `hidden_units: 384` (increased from 256 for larger observation/action space)
+   - `num_layers: 3` (added layer for attack decision complexity)
+
+4. **Configure curriculum learning** (optional but recommended):
+   - Start with movement-only, gradually enable attacks
+   - Lesson 1: Movement only (use Phase 1 model)
+   - Lesson 2: Enable attacks, increase combat reward weight
+   - Lesson 3: Full combat with all rewards
+   - Uses ML-Agents curriculum feature
+
+5. **Update self-play parameters**:
+   - `save_steps: 100000` (save opponents more frequently)
+   - `play_against_latest_model_ratio: 0.7` (higher, focuses on current skill)
+
+6. **Add reward signals**:
+   - Keep extrinsic with gamma: 0.99
+   - Optionally add GAIL (imitation) if you have demo recordings of good attacks
+   - Curiosity can help with attack exploration
+
+7. **Configure for transfer learning**:
+   - Initialize training from Phase 1 model:
+     - Use `--initialize-from=movement_phase1` flag
+     - Allows agent to keep movement skills while learning attacks
+     - Network must have compatible architecture (may need to expand carefully)
+   - Alternatively, start from scratch (longer but sometimes more stable)
 
 **Verification Checklist:**
-- [ ] Component initializes correctly
-- [ ] Dodge triggers on input
-- [ ] Cooldown prevents spam
-- [ ] Cannot dodge in invalid states
-- [ ] Events fire correctly
+- [ ] attack_training.yaml has valid YAML syntax
+- [ ] Hyperparameters updated for attack complexity
+- [ ] Network architecture expanded appropriately
+- [ ] Self-play config adjusted
+- [ ] Transfer learning configured (if using)
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/CharacterDodgeTests.cs`
-
-Test cases:
-- TryDodge succeeds when available
-- TryDodge fails when on cooldown
-- TryDodge fails when in invalid state (attacking)
-- Cooldown expires after DodgeData.CooldownFrames
-- OnDodgeReady event fires when cooldown completes
+- Validate config: `mlagents-learn <config> --help`
+- Ensure no errors before starting training
 
 **Commit Message Template:**
 ```
-feat(defense): implement CharacterDodge component
+feat(training): create attack training configuration
 
-- Handle dodge execution and cooldown
-- Subscribe to input events
-- Trigger DodgingState transitions
-- Expose dodge availability for UI
+- Created attack_training.yaml based on movement config
+- Increased batch size and buffer size for complexity
+- Expanded network to 3 layers with 384 hidden units
+- Configured transfer learning from Phase 1 model
+- Increased max training steps to 7M
+- Adjusted entropy and learning rate for attack exploration
+- Updated self-play parameters for faster opponent updates
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~8,000
+**Estimated tokens:** ~7,000
 
 ---
 
-### Task 6: Integrate Dodge with Hit Detection System
+## Task 6: Train Attack Agent and Evaluate
 
-**Goal:** Make characters invulnerable during i-frame window by integrating with hit detection.
+**Goal:** Execute training with attack capabilities and evaluate the resulting striking behavior.
 
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Combat/HitDetection/HurtboxData.cs` - Add invulnerability check
-- OR `Assets/Knockout/Scripts/Combat/HitDetection/` - Modify hit detection logic
+**Files to Modify/Create:**
+- `Assets/Knockout/Training/Models/attack_phase2.onnx` (trained model)
+- `docs/TRAINING_LOG.md` (update with Phase 2 results)
 
 **Prerequisites:**
-- Task 4 complete (DodgingState with IsInvulnerable property)
-- Understand existing hit detection system (read HurtboxData.cs, HitboxData.cs, HitData.cs)
+- Tasks 1-5 completed (full attack system ready)
+- Phase 1 model available for transfer learning
 
 **Implementation Steps:**
 
-1. **Locate hit detection code:**
-   - Search for damage application: `Grep pattern: "ApplyDamage|ProcessHit|OnHitReceived" in Assets/Knockout/Scripts/Combat/HitDetection/`
-   - Expected files: `HurtboxData.cs` (likely contains damage processing), `HitData.cs`
-   - Look for method where damage is calculated and applied to character
-   - Typical flow: Hitbox triggers → Hurtbox detects → Damage applied in processing method
-2. Add invulnerability check to hurtbox hit processing:
-   - Query character's current state (via CombatStateMachine or DodgingState directly)
-   - If `IsInvulnerable == true`, ignore hit (return early, no damage applied)
-   - Optionally fire `OnHitDodged` event for feedback (VFX, sound)
-3. Ensure invulnerability only applies during i-frame window:
-   - `DodgingState` manages `IsInvulnerable` property based on frame count
-   - Outside i-frame window, vulnerable even while dodging
-4. Consider edge cases:
-   - Multi-hit attacks during dodge
-   - Projectiles (if any) during i-frames
-   - Grabs or special attacks (respect i-frames)
+1. **Prepare for training**:
+   - Verify all components updated (observations, actions, rewards, physics controllers)
+   - Test in Heuristic mode that attacks work correctly
+   - Save TrainingArena scene
 
-**Design Guidance:**
-- Invulnerability is binary: either invulnerable or not (no partial damage)
-- i-frames should be clear and consistent (not random)
-- Feedback important: player needs to know dodge succeeded (visual/audio cue)
+2. **Start training with transfer learning**:
+   ```bash
+   mlagents-learn Assets/Knockout/Training/Config/attack_training.yaml --run-id=attack_phase2 --initialize-from=movement_phase1 --time-scale=20
+   ```
+   - If initialization fails (architecture mismatch), train from scratch:
+   ```bash
+   mlagents-learn Assets/Knockout/Training/Config/attack_training.yaml --run-id=attack_phase2 --time-scale=20
+   ```
+
+3. **Monitor training closely**:
+   - Watch TensorBoard for:
+     - Cumulative reward should increase
+     - Hit accuracy metric (custom scalar if logged)
+     - Damage dealt increasing over time
+     - Attack variety (track via custom scalars)
+   - Early training (first 500k steps):
+     - Agents may swing wildly, missing often
+     - Reward will be volatile as agents explore
+     - Look for ANY hits landing as progress sign
+
+4. **Mid-training checkpoints** (every 1M steps):
+   - Load checkpoint and observe:
+     - Do agents hit each other with attacks?
+     - Is attack timing improving (hitting vulnerable opponents)?
+     - Are multiple attack types used?
+     - Is movement still functional (not degraded)?
+   - If movement degraded catastrophically, consider:
+     - Freezing movement policy layers (advanced)
+     - Increasing movement reward weights
+     - Starting from scratch instead of transfer learning
+
+5. **Training duration**:
+   - Minimum: 3M steps (~2-3 hours)
+   - Recommended: 5-7M steps (~4-6 hours)
+   - Attacks are harder to learn than movement, expect longer training
+   - Stop when:
+     - Hit accuracy plateaus at reasonable level (>30%)
+     - Agents consistently land combos
+     - Attack variety is demonstrated
+
+6. **Evaluate trained model**:
+   - Quantitative metrics:
+     - Final cumulative reward
+     - Hit accuracy percentage
+     - Average damage per episode
+     - Knockout rate
+   - Qualitative evaluation:
+     - [ ] Agents throw punches during fights
+     - [ ] Attacks land on opponent (not just swinging wildly)
+     - [ ] Multiple attack types used (jabs, hooks, uppercuts)
+     - [ ] Weight transfer visible during punches
+     - [ ] Agents attack when opponent vulnerable
+     - [ ] Movement still natural (not degraded from Phase 1)
+     - [ ] Close-range combat occurs frequently
+     - [ ] Fights look dynamic and engaging
+
+7. **Compare to Phase 1**:
+   - Agent should retain movement skills from Phase 1
+   - Plus now actively attack opponent
+   - Ideal: seamless integration of movement + attacks
+
+8. **Export and integrate model**:
+   - Copy final model to `Assets/Knockout/Training/Models/attack_phase2.onnx`
+   - Test in gameplay scene
+   - Verify performance acceptable
+
+9. **Document results**:
+   - Update `docs/TRAINING_LOG.md` with Phase 2 details
+   - Include metrics, observations, issues encountered
+   - Note any hyperparameter adjustments made
+
+10. **Troubleshooting**:
+    - **Agents don't attack**:
+      - Increase attack reward magnitudes
+      - Decrease movement rewards (may be exploiting movement-only)
+      - Reduce attack execution cost (make attacking easier)
+    - **Agents spam attacks wildly**:
+      - Increase attack accuracy rewards
+      - Add larger penalty for missed attacks
+      - Increase attack variety rewards
+    - **Movement degraded**:
+      - Use transfer learning from Phase 1
+      - Increase movement reward weights
+      - Consider freezing movement layers
+    - **Training unstable**:
+      - Decrease learning rate
+      - Decrease batch size
+      - Check for NaN in observations/rewards
 
 **Verification Checklist:**
-- [ ] Hits ignored during i-frame window
-- [ ] Hits connect outside i-frame window
-- [ ] OnHitDodged event fires when hit dodged
-- [ ] No damage applied during i-frames
-- [ ] Hitbox/hurtbox interaction remains stable
+- [ ] Training completes without errors
+- [ ] Cumulative reward increases over training
+- [ ] Agents demonstrate attacking behavior
+- [ ] Hit accuracy improves over training
+- [ ] Multiple attack types observed
+- [ ] Movement quality maintained from Phase 1
+- [ ] Model performs well in gameplay scene
+- [ ] Training results documented
 
 **Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/DodgeInvulnerabilityTests.cs`
-
-Test cases:
-- Hit connects when not dodging
-- Hit ignored during i-frame window
-- Hit connects during dodge recovery (after i-frames)
-- OnHitDodged event fires when hit dodged
+- Load trained model and run 20+ episodes
+- Manually observe and rate:
+  - Hit accuracy (% of attacks that land)
+  - Attack variety (number of different attacks per episode)
+  - Movement quality compared to Phase 1
+  - Overall fight entertainment value
 
 **Commit Message Template:**
 ```
-feat(defense): integrate dodge i-frames with hit detection
+feat(training): train attack execution agent via self-play
 
-- Add invulnerability check to hurtbox processing
-- Ignore hits during i-frame window
-- Fire OnHitDodged event for feedback
+- Executed training with transfer learning from Phase 1
+- Trained for 5M steps over 5 hours
+- Achieved final cumulative reward of X.X
+- Agents demonstrate varied attack execution (jabs, hooks, uppercuts)
+- Hit accuracy improved to ~35% by end of training
+- Agents exhibit weight transfer and physics-based striking
+- Movement quality maintained from Phase 1
+- Exported attack_phase2.onnx model
+- Documented training process and results in TRAINING_LOG.md
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 7: Integrate DodgingState into CombatStateMachine
-
-**Goal:** Wire DodgingState into state machine transition graph.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Combat/CombatStateMachine.cs` - Add state and transitions
-
-**Prerequisites:**
-- Task 4 complete (DodgingState exists)
-- Review existing state machine transitions
-
-**Implementation Steps:**
-
-1. Register `DodgingState` in state machine initialization
-2. Add method `TriggerDodge(DodgeDirection direction)` to transition to DodgingState with direction parameter
-3. Configure valid transitions:
-   - From IdleState → DodgingState
-   - From BlockingState → DodgingState (can dodge while blocking)
-   - From DodgingState → IdleState (on completion)
-   - From DodgingState → HitStunnedState (if hit during recovery, outside i-frames)
-   - Cannot transition to DodgingState from AttackingState, KnockedDownState, ExhaustedState
-4. Ensure state priority: dodge input during attack is buffered or ignored (don't interrupt attack)
-
-**Design Guidance:**
-- Dodge is high-priority defensive action but doesn't interrupt offense
-- Can cancel block into dodge for repositioning
-- State machine validates transitions (CanTransitionTo)
-
-**Verification Checklist:**
-- [ ] DodgingState registered
-- [ ] TriggerDodge method functional
-- [ ] Valid transitions configured
-- [ ] Invalid transitions blocked
-- [ ] State machine stable
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Combat/CombatStateMachineTests.cs`
-
-Test cases:
-- TriggerDodge transitions to DodgingState from IdleState
-- Cannot transition to DodgingState from AttackingState
-- DodgingState transitions to IdleState on completion
-
-**Commit Message Template:**
-```
-feat(defense): integrate DodgingState into CombatStateMachine
-
-- Register state and configure transitions
-- Add TriggerDodge method with direction parameter
-- Enforce transition rules
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 8: Create ParryData ScriptableObject
-
-**Goal:** Define parry timing configuration for timed perfect block.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Data/ParryData.cs` - ScriptableObject class
-
-**Prerequisites:**
-- Review `DodgeData.cs` for ScriptableObject pattern
-- Understand parry mechanics from DD-003
-
-**Implementation Steps:**
-
-1. Create `ParryData` class in `Knockout.Characters.Data` namespace
-2. Add `[CreateAssetMenu]` attribute with menu path `"Knockout/Parry Data"` (order = 5)
-3. Define serialized fields:
-   - Parry window frames (how early before hit player can parry, e.g., 6 frames = 0.1s)
-   - Parry success duration frames (how long parry state lasts after successful parry)
-   - Attacker stagger duration seconds (how long attacker is vulnerable)
-   - Counter window duration seconds (how long defender has to counter)
-   - Parry cooldown frames (prevent parry spam)
-4. Expose public read-only properties
-5. Implement `OnValidate()` for range validation
-6. Add XML documentation and tooltips
-
-**Design Guidance:**
-- Follow DD-003 (Dodge & Parry Design)
-- Default values:
-  - Parry window: 6 frames (~0.1s before hit)
-  - Parry success duration: 12 frames (~0.2s)
-  - Attacker stagger: 0.5s
-  - Counter window: 0.5s (same as stagger)
-  - Cooldown: 18 frames (~0.3s)
-- Parry is stricter timing than dodge (smaller window)
-
-**Verification Checklist:**
-- [ ] ScriptableObject created successfully
-- [ ] OnValidate ensures valid ranges
-- [ ] Frame-to-second conversions correct
-- [ ] All fields documented
-
-**Testing Instructions:**
-
-Create EditMode test: `Assets/Knockout/Tests/EditMode/Defense/ParryDataTests.cs`
-
-Test cases:
-- ScriptableObject creation succeeds
-- OnValidate clamps values to valid ranges
-- Frame conversion correct
-- Default values match design spec
-
-**Commit Message Template:**
-```
-feat(defense): add ParryData ScriptableObject
-
-- Define parry timing configuration
-- Frame-based precision for timing window
-- Configure stagger and counter window durations
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 9: Create ParryStaggerState Combat State
-
-**Goal:** Implement attacker stagger state triggered by successful parry.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Combat/States/ParryStaggerState.cs` - Combat state class
-
-**Prerequisites:**
-- Task 8 complete (ParryData exists)
-- Review existing HitStunnedState for stun pattern
-
-**Implementation Steps:**
-
-1. Create `ParryStaggerState` inheriting from `CombatState`
-2. Implement state lifecycle:
-   - `OnEnter(float duration)`: Trigger stagger animation, start timer, fire `OnParryStaggered` event
-   - `OnUpdate()`: Track stagger duration
-   - `OnExit()`: Fire `OnParryStaggerEnded` event
-3. Prevent all actions during stagger:
-   - Cannot attack, block, dodge
-   - Can be hit (vulnerable state)
-4. Auto-transition to `IdleState` when stagger duration expires
-5. Animation: reuse hit reaction animation or create subtle stagger animation (can use existing hit animation)
-
-**Design Guidance:**
-- Stagger is a punish state (attacker is vulnerable)
-- Similar to HitStunnedState but triggered by parry, not hit
-- Duration configurable via ParryData
-
-**Verification Checklist:**
-- [ ] State entered successfully
-- [ ] Stagger animation plays
-- [ ] Cannot perform actions during stagger
-- [ ] Auto-transitions to IdleState after duration
-- [ ] Events fire correctly
-
-**Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/ParryStaggerStateTests.cs`
-
-Test cases:
-- State enters and triggers animation
-- Duration timer expires and transitions to IdleState
-- Cannot attack during stagger
-- OnParryStaggered event fires
-
-**Commit Message Template:**
-```
-feat(defense): implement ParryStaggerState
-
-- Attacker vulnerable state after parry
-- Prevent actions during stagger
-- Configurable duration via ParryData
-```
-
-**Estimated Tokens:** ~5,000
-
----
-
-### Task 10: Create CharacterParry Component
-
-**Goal:** Detect parry timing, trigger parry success, and manage parry cooldown.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/CharacterParry.cs` - Component class
-
-**Prerequisites:**
-- Task 8 complete (ParryData exists)
-- Task 9 complete (ParryStaggerState exists)
-- Understand block input from CharacterInput
-- Understand hit detection system
-
-**Implementation Steps:**
-
-1. Create `CharacterParry` component in `Knockout.Characters.Components` namespace
-2. Implement component lifecycle pattern:
-   - Dependencies: `CharacterController`, `ParryData`, `CharacterInput`, `CombatStateMachine`
-   - Subscribe to block input events
-3. Implement parry timing detection:
-   - Track when block button pressed (timestamp or frame count)
-   - **Integrate with hit detection:** This will be handled in Task 11 (integration with hit detection)
-     - Search for hit detection events: `Grep pattern: "OnHit|BeforeHit" in HurtboxData or CharacterCombat`
-     - Look for: timing when hit is about to land (before damage applied)
-     - Add parry check in hit processing: if block pressed within parry window, trigger parry
-     - Check if block pressed within parry window (last N frames before hit)
-     - If yes: trigger parry success
-     - If no: normal block occurs
-4. Implement parry success:
-   - Negate incoming hit damage
-   - Trigger attacker's `ParryStaggerState` (via attacker's CombatStateMachine)
-   - Start counter window timer (defender can attack with bonus)
-   - Fire `OnParrySuccess` event
-   - Start parry cooldown
-5. Implement parry cooldown (prevent spam)
-6. Expose properties: `CanParry`, `IsInCounterWindow`, `CooldownProgress`
-
-**Design Guidance:**
-- Parry is timing-based: block input must be within parry window before hit
-- Holding block = normal block (no parry)
-- Tapping block just before hit = parry
-- Implementation may require hit detection system integration (predict incoming hit timing)
-- Counter window gives defender opportunity, not auto-counter (defender still inputs attack)
-
-**Verification Checklist:**
-- [ ] Component initializes correctly
-- [ ] Parry detects correct timing
-- [ ] Parry negates damage
-- [ ] Attacker gets staggered
-- [ ] Counter window tracked
-- [ ] Cooldown prevents spam
-- [ ] Events fire correctly
-
-**Testing Instructions:**
-
-Create PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/CharacterParryTests.cs`
-
-Test cases:
-- Block input within parry window triggers parry
-- Block input outside parry window = normal block
-- Parry negates damage
-- Parry staggers attacker
-- Counter window opens after parry
-- Cooldown prevents consecutive parries
-
-**Commit Message Template:**
-```
-feat(defense): implement CharacterParry component
-
-- Detect parry timing window
-- Trigger parry success and stagger attacker
-- Manage counter window and cooldown
-- Fire events for UI/feedback
-```
-
-**Estimated Tokens:** ~10,000
-
----
-
-### Task 11: Integrate Parry with Hit Detection System
-
-**Goal:** Allow CharacterParry to intercept hits and trigger parry logic.
-
-**Files to Modify:**
-- `Assets/Knockout/Scripts/Combat/HitDetection/HurtboxData.cs` - Add parry check
-- OR hit processing logic
-
-**Prerequisites:**
-- Task 10 complete (CharacterParry exists)
-- Understand hit detection flow (when hit registers)
-
-**Implementation Steps:**
-
-1. In hit detection processing (before damage applied):
-   - Check if character has `CharacterParry` component
-   - Call `characterParry.TryParry(attackData, attacker)` before applying damage
-   - If parry successful (returns true):
-     - Do NOT apply damage
-     - Trigger attacker's ParryStaggerState
-     - Fire feedback events
-     - Return early (hit negated)
-   - If parry failed (returns false):
-     - Proceed with normal block or hit logic
-2. Implement `TryParry` method in CharacterParry:
-   - Check if parry available (timing window, cooldown)
-   - If successful, execute parry logic
-   - Return success boolean
-3. Ensure parry takes priority over normal block (if both possible, parry wins)
-
-**Design Guidance:**
-- Parry check happens early in hit processing pipeline
-- Parry is all-or-nothing: either fully negates or doesn't apply
-- Attacker stagger is triggered immediately on parry success
-
-**Verification Checklist:**
-- [ ] Parry check integrated into hit detection
-- [ ] Successful parry negates damage
-- [ ] Failed parry allows normal block/hit
-- [ ] Attacker staggers on parry
-- [ ] No damage edge cases (parry + hit simultaneously)
-
-**Testing Instructions:**
-
-Update PlayMode test: `Assets/Knockout/Tests/PlayMode/Defense/CharacterParryTests.cs`
-
-Test cases:
-- Parry within window negates damage
-- Parry triggers attacker stagger
-- Parry outside window = normal block
-- Multiple parry attempts respect cooldown
-
-**Commit Message Template:**
-```
-feat(defense): integrate parry with hit detection
-
-- Add parry check before damage application
-- Negate damage on successful parry
-- Trigger attacker stagger state
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 12: Update Character Prefab with Defense Components
-
-**Goal:** Add dodge and parry components to character prefab.
-
-**Files to Modify:**
-- `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` - Add components
-
-**Prerequisites:**
-- Task 5 complete (CharacterDodge exists)
-- Task 10 complete (CharacterParry exists)
-- Default data assets created (next task)
-
-**Implementation Steps:**
-
-1. Open BaseCharacter prefab
-2. Add `CharacterDodge` component:
-   - Assign dependencies (auto-find where possible)
-   - Assign DodgeData asset
-3. Add `CharacterParry` component:
-   - Assign dependencies
-   - Assign ParryData asset
-4. Verify component initialization order in CharacterController
-5. Test in play mode
-
-**Design Guidance:**
-- Follow existing component setup pattern
-- Components initialize after CharacterInput and CombatStateMachine
-
-**Verification Checklist:**
-- [ ] Components added to prefab
-- [ ] Dependencies assigned
-- [ ] Components initialize without errors
-- [ ] Dodge functional in play mode
-- [ ] Parry functional in play mode
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Test dodge inputs (left, right, back)
-- Test parry timing (block just before hit)
-- Verify i-frames work (dodge through attack)
-- Verify parry staggers opponent
-
-**Commit Message Template:**
-```
-feat(defense): add dodge and parry to character prefab
-
-- Add CharacterDodge component
-- Add CharacterParry component
-- Assign default configuration assets
-```
-
-**Estimated Tokens:** ~3,000
-
----
-
-### Task 13: Create Default Defense Data Assets
-
-**Goal:** Create default dodge and parry configuration assets.
-
-**Files to Create:**
-- `Assets/Knockout/Data/Defense/DefaultDodge.asset` - DodgeData instance
-- `Assets/Knockout/Data/Defense/DefaultParry.asset` - ParryData instance
-
-**Prerequisites:**
-- Task 1 complete (DodgeData ScriptableObject)
-- Task 8 complete (ParryData ScriptableObject)
-
-**Implementation Steps:**
-
-1. Create DefaultDodge asset:
-   - Total duration: 18 frames
-   - i-frame start: 2 frames
-   - i-frame duration: 8 frames
-   - Dodge distance: 1.5 units
-   - Cooldown: 12 frames
-2. Create DefaultParry asset:
-   - Parry window: 6 frames
-   - Parry success duration: 12 frames
-   - Attacker stagger: 0.5s
-   - Counter window: 0.5s
-   - Cooldown: 18 frames
-3. Save in `Assets/Knockout/Data/Defense/` directory
-
-**Design Guidance:**
-- Values match design spec from DD-003
-- These serve as templates for character-specific customization
-
-**Verification Checklist:**
-- [ ] Assets created successfully
-- [ ] Values match design spec
-- [ ] Assets assignable to components
-
-**Testing Instructions:**
-
-Manual verification:
-- Assets appear in project
-- Values display correctly in Inspector
-- No validation errors
-
-**Commit Message Template:**
-```
-feat(defense): add default dodge and parry data assets
-
-- Create DefaultDodge with balanced timing
-- Create DefaultParry with strict timing
-- Templates for character customization
-```
-
-**Estimated Tokens:** ~2,000
-
----
-
-### Task 14: Integrate Dodge and Parry Animations
-
-**Goal:** Wire dodge and parry animations into Animator Controller.
-
-**Files to Modify:**
-- Animator Controller asset (e.g., `Assets/Knockout/Animations/Characters/BaseCharacter/BaseCharacterAnimator.controller`)
-- `Assets/Knockout/Scripts/Characters/Components/CharacterAnimator.cs` - Add triggers
-
-**Prerequisites:**
-- Review existing Animator Controller structure
-- Understand animation trigger system
-
-**Implementation Steps:**
-
-1. Open Animator Controller
-2. Add dodge animations:
-   - Create states: DodgeLeft, DodgeRight, DodgeBack
-   - Assign animation clips: left_dodge.fbx, right_dodge.fbx, (reuse for back or create)
-   - Add transitions from Idle/Any State → Dodge states
-   - Add triggers: `DodgeLeft`, `DodgeRight`, `DodgeBack`
-3. Add parry/block animation (reuse existing Block animation):
-   - Parry uses same animation as block, just different timing
-   - Ensure Block state can be entered quickly (low transition time)
-4. Update `CharacterAnimator.cs`:
-   - Add methods `PlayDodgeLeft()`, `PlayDodgeRight()`, `PlayDodgeBack()`
-   - Trigger corresponding animator parameters
-   - Subscribe to DodgingState enter event to trigger animations
-5. Ensure animation lengths match DodgeData frame durations
-
-**Design Guidance:**
-- Dodge animations should be quick and snappy
-- Parry reuses block animation (visual distinction comes from timing/feedback)
-- If back dodge animation missing, mirror left or right dodge
-
-**Verification Checklist:**
-- [ ] Dodge animations integrated into Animator Controller
-- [ ] Animator triggers configured
-- [ ] CharacterAnimator triggers animations correctly
-- [ ] Animation durations match data configuration
-- [ ] Transitions smooth and responsive
-
-**Testing Instructions:**
-
-Manual testing:
-- Enter play mode
-- Trigger dodge inputs
-- Verify correct animations play
-- Check animation timing matches dodge duration
-
-**Commit Message Template:**
-```
-feat(defense): integrate dodge animations
-
-- Add dodge states to Animator Controller
-- Configure dodge animation triggers
-- Update CharacterAnimator to trigger dodge animations
-```
-
-**Estimated Tokens:** ~6,000
-
----
-
-### Task 15: Comprehensive Integration Testing
-
-**Goal:** Verify all Phase 2 systems work together in gameplay scenarios.
-
-**Files to Create:**
-- `Assets/Knockout/Tests/PlayMode/Integration/DefenseIntegrationTests.cs` - Integration tests
-
-**Prerequisites:**
-- All previous tasks complete
-
-**Implementation Steps:**
-
-1. Create integration test suite covering defense mechanics:
-   - Test: Dodge through attack with i-frames
-   - Test: Dodge recovery (hit during recovery frames)
-   - Test: Parry negates damage and staggers attacker
-   - Test: Parry counter window allows follow-up attack
-   - Test: Block vs Parry differentiation (hold vs tap)
-   - Test: Dodge cooldown prevents spam
-   - Test: Parry cooldown prevents spam
-2. Test multi-scenario flows:
-   - Dodge → immediate attack
-   - Parry → counter attack
-   - Block → dodge (cancel block into dodge)
-3. Test edge cases:
-   - Dodging with 0 stamina (should work, dodge is free)
-   - Parry while exhausted (should work, defensive action)
-   - Multiple attackers (dodge i-frames vs multiple hits)
-   - Dodge during hit recovery (should be blocked)
-
-**Design Guidance:**
-- Test realistic combat scenarios
-- Verify timing windows function as designed
-- Check event firing order
-
-**Verification Checklist:**
-- [ ] All integration tests pass
-- [ ] Dodge i-frames functional in gameplay
-- [ ] Parry timing reliable and consistent
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps)
-
-**Testing Instructions:**
-
-Run all tests:
-- EditMode tests (all defense tests)
-- PlayMode tests (all defense tests)
-- Integration tests
-- Verify all green
-
-**Commit Message Template:**
-```
-test(defense): add comprehensive integration tests
-
-- Test dodge i-frame mechanics
-- Test parry timing and stagger
-- Test defense system interactions
-- Cover edge cases and multi-scenario flows
-```
-
-**Estimated Tokens:** ~10,000
-
----
-
-### Task 16: Documentation and Code Cleanup
-
-**Goal:** Document defense systems, clean up debug code, finalize Phase 2.
-
-**Files to Create:**
-- `Assets/Knockout/Scripts/Characters/Components/DEFENSE_SYSTEMS.md` - System documentation
-
-**Files to Modify:**
-- All Phase 2 scripts - Remove debug logs, finalize comments
-
-**Prerequisites:**
-- All previous tasks complete
-- All tests passing
-
-**Implementation Steps:**
-
-1. Create DEFENSE_SYSTEMS.md documentation:
-   - Overview of dodge and parry mechanics
-   - How to configure timing windows
-   - How i-frames work technically
-   - Parry timing guide for players/designers
-   - Troubleshooting common issues
-2. Document animation integration
-3. Review all scripts for cleanup:
-   - Remove debug logs
-   - Finalize XML comments
-   - Verify naming conventions
-4. Update main docs with defense system summary
-
-**Design Guidance:**
-- Documentation helps designers tune defense feel
-- Explain frame counts and timing for balance
-
-**Verification Checklist:**
-- [ ] DEFENSE_SYSTEMS.md comprehensive
-- [ ] All debug logs removed
-- [ ] XML comments complete
-- [ ] No compiler warnings
-
-**Testing Instructions:**
-
-Final checks:
-- Build project
-- Run all tests
-- Code review
-
-**Commit Message Template:**
-```
-docs(defense): add defense systems documentation
-
-- Create DEFENSE_SYSTEMS.md guide
-- Document i-frame and parry mechanics
-- Remove debug logging
-- Finalize code documentation
-```
-
-**Estimated Tokens:** ~5,000
+**Estimated tokens:** ~12,000
 
 ---
 
 ## Phase 2 Verification
 
-**Completion Checklist:**
-- [ ] All 16 tasks completed
-- [ ] All tests passing (EditMode + PlayMode)
-- [ ] Dodge system functional (i-frames work)
-- [ ] Parry system functional (timing reliable)
-- [ ] Animations integrated and playing correctly
-- [ ] Character prefab updated with defense components
-- [ ] Documentation complete
-- [ ] Code reviewed and cleaned
-- [ ] No console errors or warnings
-- [ ] Performance maintained (60fps, Profiler shows CharacterDodge and CharacterParry < 0.1ms per frame each, no GC allocations)
+Complete checklist before proceeding to Phase 3:
 
-**Integration Points for Next Phase:**
-- `CharacterDodge` and `CharacterParry` available for AI (future)
-- Defense events available for UI feedback (Phase 5)
-- Parry counter window tracked for combo integration (Phase 3)
-- i-frame and parry systems ready for gameplay tuning
+### Observations
+- [ ] Attack opportunity observations added (~15 new observations)
+- [ ] Total observation space ~69 dimensions
+- [ ] Attack range detection accurate
+- [ ] Opponent vulnerability detection working
 
-**Known Limitations:**
-- Defense UI not implemented (cooldown indicators - Phase 5)
-- AI doesn't use dodge/parry yet (post-Phase 5)
-- Parry counter window doesn't grant damage bonus yet (could be Phase 3 or future)
-- No tutorial for defense mechanics (consider for Phase 5 training mode)
+### Actions
+- [ ] Attack actions added to action space (total 15 actions)
+- [ ] Attack type discretization working correctly
+- [ ] Force multiplier and timing parameters functional
+- [ ] Attacks execute via CharacterCombat system
 
----
+### Physics Controllers
+- [ ] AttackController implemented for strike physics
+- [ ] Weight transfer visible during attacks
+- [ ] Punch forces applied during active frames
+- [ ] Follow-through and recovery mechanics working
+- [ ] Physics-enhanced attacks blend with animations
 
-## Review Feedback (Iteration 1)
+### Reward Function
+- [ ] Combat effectiveness rewards for hits/damage
+- [ ] Physical realism rewards for technique
+- [ ] Strategic rewards for variety and combos
+- [ ] Sparse milestone rewards for knockouts
+- [ ] Reward balance appropriate
 
-**Verification Evidence:**
-- ✅ Bash("git log --format='%s' 3e31515~1..d17b378"): 12 commits, all following conventional format
-- ✅ Glob: All implementation files exist (DodgeData, ParryData, CharacterDodge, CharacterParry, DodgingState, ParryStaggerState)
-- ✅ Read("Assets/Knockout/Scripts/Characters/Components/DEFENSE_SYSTEMS.md"): Documentation comprehensive
-- ✅ Bash("ls Assets/Knockout/Tests/EditMode/Defense/"): EditMode tests for ScriptableObjects present
-- ❌ Bash("ls Assets/Knockout/Tests/PlayMode/Defense/"): Directory does not exist
-- ❌ Bash("find Assets/Knockout/Data -name '*Dodge*'"): No default data assets found
+### Training Results
+- [ ] Training completed for at least 3M steps
+- [ ] Agents attack opponents during fights
+- [ ] Hit accuracy >25% by training end
+- [ ] Multiple attack types demonstrated
+- [ ] Movement quality maintained
+- [ ] Model exported as attack_phase2.onnx
 
-### Task 4: DodgingState Tests
-
-> **Consider:** Task 4 verification checklist mentions creating `Assets/Knockout/Tests/PlayMode/Defense/DodgingStateTests.cs`. When you run `find Assets/Knockout/Tests/PlayMode -name "*Dodging*"`, what do you find?
->
-> **Think about:** The Phase 2 Verification checklist at line 1058 states "All tests passing (EditMode + PlayMode)". Have you created the PlayMode test suite for DodgingState?
->
-> **Reflect:** Look at how Phase 1 structured their tests with both EditMode and PlayMode directories. Are you following the same pattern for Phase 2?
-
-### Task 5: CharacterDodge Tests
-
-> **Consider:** Task 5 specifies creating `Assets/Knockout/Tests/PlayMode/Defense/CharacterDodgeTests.cs` with 6 test cases. When you check `ls Assets/Knockout/Tests/PlayMode/Defense/`, does this file exist?
->
-> **Think about:** The plan's success criteria at line 13 requires "85%+ test coverage for new components". How can you achieve this without PlayMode tests for CharacterDodge?
-
-### Task 6: Dodge Invulnerability Tests
-
-> **Consider:** Task 6 requires creating `Assets/Knockout/Tests/PlayMode/Defense/DodgeInvulnerabilityTests.cs` to verify i-frames work correctly. Have you verified that hits are actually ignored during the i-frame window through automated tests?
->
-> **Reflect:** Integration between DodgingState.IsInvulnerable and hit detection is critical. How are you ensuring this works without PlayMode integration tests?
-
-### Task 9: ParryStaggerState Tests
-
-> **Consider:** Task 9 specifies `Assets/Knockout/Tests/PlayMode/Defense/ParryStaggerStateTests.cs`. When you search for this file, what do you find?
->
-> **Think about:** ParryStaggerState has timing-critical behavior (stagger duration, transitions). How are you verifying this works correctly without PlayMode tests?
-
-### Task 10: CharacterParry Tests
-
-> **Consider:** Task 10 requires `Assets/Knockout/Tests/PlayMode/Defense/CharacterParryTests.cs` with 6 specific test cases. Are these tests present?
->
-> **Reflect:** Parry timing detection is complex (6-frame window, block press timing). How can you be confident this works without automated tests?
-
-### Task 13: Default Data Assets
-
-> **Consider:** Task 13 specifies creating `Assets/Knockout/Data/Defense/DefaultDodge.asset` and `DefaultParry.asset` with specific default values. When you run `find Assets/Knockout/Data -name "*Dodge*"`, what does it return?
->
-> **Think about:** Line 567 in Task 13 states "Save in Assets/Knockout/Data/Defense/ directory (create if needed)". Has this directory been created?
->
-> **Reflect:** Default data assets serve as templates for character customization. Without them, how will designers configure dodge and parry for different characters?
-
-### Task 12: Character Prefab Update
-
-> **Consider:** Task 12 requires adding CharacterDodge and CharacterParry components to `Assets/Knockout/Prefabs/Characters/BaseCharacter.prefab` with default data asset references. Have you verified these components are present in the prefab?
->
-> **Think about:** The verification checklist at line 1062 states "Character prefab updated with defense components". How can you verify this was done?
->
-> **Reflect:** If the prefab doesn't have these components, the dodge and parry systems won't function in gameplay. What command or tool can you use to inspect the prefab?
-
-### Task 15: Integration Tests
-
-> **Consider:** Task 15 requires creating `Assets/Knockout/Tests/PlayMode/Integration/DefenseIntegrationTests.cs` covering end-to-end defense flows. When you search for integration tests mentioning defense with `find Assets/Knockout/Tests -name "*Integration*" | xargs grep -l defense`, what do you find?
->
-> **Think about:** The task specifies 7 integration scenarios and 8 edge cases to test. Without these tests, how do you know all Phase 2 systems work together correctly?
-
-### Overall Test Coverage
-
-> **Consider:** Running `find Assets/Knockout/Tests/PlayMode/Defense -type f 2>/dev/null` shows no PlayMode tests exist. The success criteria requires "85%+ test coverage for new components". Do you meet this requirement with only 2 EditMode tests?
->
-> **Reflect:** Phase 0's ADR-007 emphasizes component isolation testing. EditMode tests cover ScriptableObjects well, but component behavior (CharacterDodge, CharacterParry, DodgingState, ParryStaggerState) requires PlayMode tests. What's your testing strategy?
+### Known Limitations
+- Agents may favor certain attack types over others
+- Hit accuracy still below human-level (30-40% is good for RL)
+- No defensive reactions yet (agents take hits without blocking)
+- Weight transfer may be exaggerated or subtle (needs tuning)
 
 ---
 
-## Next Phase
+## Next Steps
 
-After Phase 2 completion and verification, proceed to:
-
-**[Phase 3: Combo System](Phase-3.md)**
-
-Implement natural combo chains and predefined combo sequences.
+After Phase 2 completion:
+- **[Phase 3: Hit Reactions & Balance](Phase-3.md)** - Add physics-based hit reactions, stumbling, and recovery
+- Ensure attack_phase2.onnx model saved before proceeding
