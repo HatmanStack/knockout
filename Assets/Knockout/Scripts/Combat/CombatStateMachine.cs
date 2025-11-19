@@ -1,5 +1,6 @@
 using UnityEngine;
 using Knockout.Characters.Components;
+using Knockout.Characters.Data;
 using Knockout.Combat.States;
 
 namespace Knockout.Combat
@@ -94,6 +95,43 @@ namespace Knockout.Combat
         public string GetCurrentStateName()
         {
             return _currentState?.StateName ?? "None";
+        }
+
+        /// <summary>
+        /// Triggers a dodge in the specified direction.
+        /// </summary>
+        /// <param name="direction">Direction to dodge</param>
+        /// <param name="dodgeData">Dodge configuration data</param>
+        /// <returns>True if dodge was triggered successfully</returns>
+        public bool TriggerDodge(DodgeDirection direction, DodgeData dodgeData)
+        {
+            if (dodgeData == null)
+            {
+                Debug.LogWarning("[CombatStateMachine] TriggerDodge called with null DodgeData!");
+                return false;
+            }
+
+            // Create new dodging state
+            DodgingState dodgingState = new DodgingState();
+
+            // Check if transition is valid
+            if (!CanTransitionTo(dodgingState))
+            {
+                return false;
+            }
+
+            // Exit current state
+            _currentState?.Exit(_combat);
+
+            // Set up and enter dodging state
+            CombatState oldState = _currentState;
+            _currentState = dodgingState;
+            dodgingState.Enter(_combat, direction, dodgeData);
+
+            // Fire event
+            OnStateChanged?.Invoke(oldState, dodgingState);
+
+            return true;
         }
     }
 }

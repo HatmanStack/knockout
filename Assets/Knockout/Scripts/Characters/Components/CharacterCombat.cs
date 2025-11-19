@@ -156,6 +156,9 @@ namespace Knockout.Characters.Components
         {
             // Update state machine
             _stateMachine?.Update();
+
+            // Check for auto-transitions
+            HandleAutoTransitions();
         }
 
         private void OnDestroy()
@@ -462,6 +465,22 @@ namespace Knockout.Characters.Components
                 if (exhaustedState.CanRecover())
                 {
                     // Auto-recover to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles auto-transitions for states that complete based on internal criteria.
+        /// </summary>
+        private void HandleAutoTransitions()
+        {
+            // Check if dodging state is complete
+            if (_stateMachine.CurrentState is DodgingState dodgingState)
+            {
+                if (dodgingState.IsDodgeComplete())
+                {
+                    // Auto-transition to idle state
                     _stateMachine.ChangeState(new IdleState());
                 }
             }

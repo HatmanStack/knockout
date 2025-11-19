@@ -110,6 +110,7 @@ namespace Knockout.Combat.States
 
             // Defensive actions allowed
             return newState is BlockingState
+                || newState is DodgingState
                 || newState is HitStunnedState
                 || newState is KnockedDownState
                 || newState is KnockedOutState;
