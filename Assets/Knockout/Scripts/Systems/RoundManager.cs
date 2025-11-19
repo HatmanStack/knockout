@@ -18,6 +18,12 @@ namespace Knockout.Systems
         [SerializeField] [Tooltip("AI character health component")]
         private CharacterHealth aiHealth;
 
+        [SerializeField] [Tooltip("Player character scoring component")]
+        private CharacterScoring playerScoring;
+
+        [SerializeField] [Tooltip("AI character scoring component")]
+        private CharacterScoring aiScoring;
+
         [Header("Round Settings")]
         [SerializeField] [Range(1, 5)] [Tooltip("Number of rounds to win the match")]
         private int roundsToWin = 2;
@@ -27,6 +33,16 @@ namespace Knockout.Systems
 
         [SerializeField] [Range(1f, 5f)] [Tooltip("Duration to display round over message")]
         private float roundOverDisplayDuration = 2f;
+
+        [Header("Round Timer Settings")]
+        [SerializeField] [Tooltip("Enable round timer (false = unlimited time)")]
+        private bool enableRoundTimer = true;
+
+        [SerializeField] [Tooltip("Round duration in seconds")]
+        private float roundDuration = 180f;
+
+        [SerializeField] [Tooltip("Allow draws (false = sudden death)")]
+        private bool allowDraws = false;
 
         // Round state
         public enum RoundState
@@ -42,6 +58,10 @@ namespace Knockout.Systems
         private int _aiRoundWins;
         private int _currentRoundNumber;
         private bool _isMatchOver;
+
+        // Round timer state
+        private float _roundTimeRemaining;
+        private bool _timerRunning;
 
         #region Events
 
@@ -75,6 +95,18 @@ namespace Knockout.Systems
         /// </summary>
         public event Action<int> OnRoundStart;
 
+        /// <summary>
+        /// Fired when round time changes.
+        /// Parameter: time remaining in seconds
+        /// </summary>
+        public event Action<float> OnRoundTimeChanged;
+
+        /// <summary>
+        /// Fired when judge decision is made.
+        /// Parameters: (winner: true if player won, false if AI won, playerScore, aiScore)
+        /// </summary>
+        public event Action<bool, float, float> OnJudgeDecision;
+
         #endregion
 
         #region Public Properties
@@ -84,6 +116,16 @@ namespace Knockout.Systems
         public int AIRoundWins => _aiRoundWins;
         public int CurrentRoundNumber => _currentRoundNumber;
         public bool IsMatchOver => _isMatchOver;
+
+        /// <summary>
+        /// Gets the remaining time in the current round (seconds).
+        /// </summary>
+        public float RoundTimeRemaining => _roundTimeRemaining;
+
+        /// <summary>
+        /// Gets the round progress (0 = just started, 1 = time up).
+        /// </summary>
+        public float RoundProgress => roundDuration > 0 ? 1f - (_roundTimeRemaining / roundDuration) : 0f;
 
         #endregion
 
@@ -97,6 +139,15 @@ namespace Knockout.Systems
         private void Start()
         {
             InitializeMatch();
+        }
+
+        private void Update()
+        {
+            // Update round timer
+            if (_timerRunning && enableRoundTimer)
+            {
+                UpdateRoundTimer();
+            }
         }
 
         private void OnDestroy()
@@ -118,6 +169,16 @@ namespace Knockout.Systems
             if (aiHealth == null)
             {
                 Debug.LogError("RoundManager: AI health reference is missing!");
+            }
+
+            if (enableRoundTimer && playerScoring == null)
+            {
+                Debug.LogWarning("RoundManager: Player scoring reference is missing - judge decisions will not work!");
+            }
+
+            if (enableRoundTimer && aiScoring == null)
+            {
+                Debug.LogWarning("RoundManager: AI scoring reference is missing - judge decisions will not work!");
             }
         }
 
@@ -176,10 +237,12 @@ namespace Knockout.Systems
 
                 case RoundState.Fighting:
                     EnableCharacters();
+                    StartRoundTimer();
                     break;
 
                 case RoundState.RoundOver:
                     DisableCharacters();
+                    StopRoundTimer();
                     break;
 
                 case RoundState.MatchOver:
@@ -209,6 +272,9 @@ namespace Knockout.Systems
 
             // Reset combos for all characters
             ResetAllCombos();
+
+            // Reset scores for all characters
+            ResetAllScores();
 
             // Fire round start event
             OnRoundStart?.Invoke(_currentRoundNumber);
@@ -376,6 +442,121 @@ namespace Knockout.Systems
             foreach (var tracker in comboTrackers)
             {
                 tracker?.ResetCombo();
+            }
+        }
+
+        #endregion
+
+        #region Score Reset
+
+        /// <summary>
+        /// Resets scores for all characters in the scene.
+        /// </summary>
+        private void ResetAllScores()
+        {
+            if (playerScoring != null)
+            {
+                playerScoring.ResetScore();
+            }
+
+            if (aiScoring != null)
+            {
+                aiScoring.ResetScore();
+            }
+        }
+
+        #endregion
+
+        #region Round Timer
+
+        private void StartRoundTimer()
+        {
+            if (!enableRoundTimer) return;
+
+            _roundTimeRemaining = roundDuration;
+            _timerRunning = true;
+
+            // Fire initial time update
+            OnRoundTimeChanged?.Invoke(_roundTimeRemaining);
+        }
+
+        private void StopRoundTimer()
+        {
+            _timerRunning = false;
+        }
+
+        private void UpdateRoundTimer()
+        {
+            if (_currentState != RoundState.Fighting) return;
+
+            _roundTimeRemaining -= Time.deltaTime;
+
+            // Fire time update event
+            OnRoundTimeChanged?.Invoke(_roundTimeRemaining);
+
+            // Check if time expired
+            if (_roundTimeRemaining <= 0f)
+            {
+                _roundTimeRemaining = 0f;
+                _timerRunning = false;
+
+                // Trigger judge decision
+                DetermineJudgeWinner();
+            }
+        }
+
+        #endregion
+
+        #region Judge Decision
+
+        /// <summary>
+        /// Determines round winner by comparing scores.
+        /// Called when round timer expires.
+        /// </summary>
+        private void DetermineJudgeWinner()
+        {
+            if (playerScoring == null || aiScoring == null)
+            {
+                Debug.LogWarning("RoundManager: Cannot determine judge winner - scoring components missing!");
+                // Default to draw or sudden death
+                if (allowDraws)
+                {
+                    // Handle draw - for now, player wins
+                    EndRound(true);
+                }
+                return;
+            }
+
+            // Get scores
+            float playerScore = playerScoring.CalculateTotalScore();
+            float aiScore = aiScoring.CalculateTotalScore();
+
+            // Fire judge decision event
+            OnJudgeDecision?.Invoke(playerScore > aiScore, playerScore, aiScore);
+
+            // Determine winner
+            if (Mathf.Abs(playerScore - aiScore) < 0.01f)
+            {
+                // Equal scores - draw
+                if (allowDraws)
+                {
+                    // For now, call it a player win (could implement draw logic)
+                    Debug.Log($"Judge Decision: DRAW (Player: {playerScore:F1}, AI: {aiScore:F1}) - Player wins tie-breaker");
+                    EndRound(true);
+                }
+                else
+                {
+                    // Sudden death - continue round (timer restarts)
+                    Debug.Log($"Judge Decision: TIE (Player: {playerScore:F1}, AI: {aiScore:F1}) - SUDDEN DEATH!");
+                    StartRoundTimer();
+                }
+            }
+            else
+            {
+                // Higher score wins
+                bool playerWon = playerScore > aiScore;
+                Debug.Log($"Judge Decision: {(playerWon ? "PLAYER" : "AI")} WINS (Player: {playerScore:F1}, AI: {aiScore:F1})");
+                EndRound(playerWon);
             }
         }
 
