@@ -52,6 +52,18 @@ Add the following actions:
 - Binding: Left Shift (Keyboard)
 - Binding: East Button (Gamepad - B/Circle)
 
+**DodgeLeft** (Button):
+- Binding: Q (Keyboard)
+- Interaction: Press
+
+**DodgeRight** (Button):
+- Binding: E (Keyboard)
+- Interaction: Press
+
+**DodgeBack** (Button):
+- Binding: Left Control (Keyboard)
+- Interaction: Press
+
 #### UI Action Map
 
 **Pause** (Button):
