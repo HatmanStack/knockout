@@ -10,12 +10,115 @@
 
 The following migration phases **require Unity Editor** and cannot be completed without it:
 
+- **Phase 1**: Pre-Upgrade Preparation (38% Unity Editor - Tasks 1, 5, 8)
 - **Phase 2**: Unity 6 Upgrade Execution (100% Unity Editor)
 - **Phase 3**: Package Updates (100% Unity Editor)
 - **Phase 4**: Test Suite Migration (100% Unity Editor)
 - **Phase 5**: Asset Store Package Updates (90% Unity Editor)
 - **Phase 6**: Modernization (80% Unity Editor)
 - **Phase 7**: WebGL Optimization (100% Unity Editor)
+
+---
+
+## Phase 1: Unity Editor Tasks (Pre-Upgrade Preparation)
+
+### Task 1-1: Verify Environment and Unity Versions
+
+**Requires Unity Editor (Unity Hub)**
+
+1. Open Unity Hub
+2. Verify Unity 2021.3.45f2 is installed and listed
+3. Verify Unity 6.0 LTS is installed and listed
+4. Launch Unity 2021.3 to verify it works
+5. Close Unity 2021.3
+6. Launch Unity 6.0 to verify it works (do NOT open Knockout project yet)
+7. Close Unity 6.0
+8. Check disk space (minimum 25-30GB free)
+
+**Status:** Required before Phase 2
+**Estimated Time:** 15-30 minutes
+
+### Task 1-5: Establish Performance Baselines
+
+**Requires Unity Editor** (CRITICAL TASK)
+
+1. Open Knockout project in Unity 2021.3.45f2
+2. Wait for project to fully load and compile
+3. Open Test Runner (Window > General > Test Runner)
+4. Run all EditMode tests:
+   - Note total execution time
+   - Note pass/fail count
+   - Document any failures
+5. Run all PlayMode tests:
+   - Note total execution time
+   - Note pass/fail count
+   - Document any failures
+6. Build WebGL version:
+   - File > Build Settings > WebGL
+   - Enable "Development Build" for profiling
+   - Click Build and note build time
+   - Measure build folder size
+   - Note WASM file size specifically
+7. Test WebGL build in browser:
+   - Start local web server (e.g., `python -m http.server`)
+   - Open build in Chrome
+   - Measure load time (time until interactive)
+   - Play for 2-3 minutes
+   - Record frame rate (F12 > Performance or Unity Profiler)
+   - Note memory usage
+   - Document any console errors/warnings
+8. Create `docs/migration/PERFORMANCE_BASELINE.md` with all metrics
+9. Commit the baseline document
+
+**Status:** CRITICAL - Required for Phase 7 comparison
+**Estimated Time:** 1-2 hours (includes build time)
+
+**Metrics to Record:**
+- EditMode test time: _____ seconds
+- EditMode test pass rate: ___/___
+- PlayMode test time: _____ seconds
+- PlayMode test pass rate: ___/___
+- WebGL build time: _____ minutes
+- WebGL build size: _____ MB
+- WASM file size: _____ MB
+- Load time: _____ seconds
+- Average FPS: _____
+- Min FPS: _____
+- Memory usage: _____ MB
+
+### Task 1-8: Verify Project Opens in Unity 2021.3
+
+**Requires Unity Editor**
+
+1. Open Knockout project in Unity 2021.3.45f2
+2. Check Console for errors on load (Window > General > Console)
+3. Document any errors found
+4. Open MainScene.unity (Assets/Knockout/Scenes/MainScene.unity)
+5. Verify scene loads without errors
+6. Enter Play mode (click Play button)
+7. Test basic gameplay:
+   - Character moves
+   - Can attack
+   - UI displays
+   - No critical errors in Console
+8. Exit Play mode
+9. Run quick test suite check:
+   - Open Test Runner
+   - Run a few representative tests
+   - Verify tests execute (pass/fail rate less important than execution)
+10. Close Unity Editor cleanly
+11. Document results in migration notes
+
+**Status:** Required before Phase 2
+**Estimated Time:** 30-45 minutes
+
+**Verification Checklist:**
+- [ ] Project opens without fatal errors
+- [ ] MainScene loads successfully
+- [ ] Play mode works
+- [ ] Basic gameplay functional
+- [ ] Tests can run
+- [ ] Editor closes without crash
 
 ---
 
