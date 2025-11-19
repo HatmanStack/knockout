@@ -198,10 +198,15 @@ namespace Knockout.Tests.PlayMode.Integration
             bool comboStarted = false;
             int hitCount = 0;
             bool comboEnded = false;
+            float totalDamage = 0f;
 
             _attackerComboTracker.OnComboStarted += () => comboStarted = true;
             _attackerComboTracker.OnComboHitLanded += (hitNum, damage) => hitCount++;
-            _attackerComboTracker.OnComboEnded += (count, damage) => comboEnded = true;
+            _attackerComboTracker.OnComboEnded += (count, damage) =>
+            {
+                comboEnded = true;
+                totalDamage = damage;
+            };
 
             // Start combo
             _attackerComboTracker.RegisterHitLanded(0, 10f);
@@ -216,6 +221,35 @@ namespace Knockout.Tests.PlayMode.Integration
             // Reset combo
             _attackerComboTracker.ResetCombo();
             Assert.IsTrue(comboEnded, "OnComboEnded should fire on reset");
+            Assert.Greater(totalDamage, 0f, "Total damage should be tracked");
+
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator Integration_TotalDamage_AccumulatesCorrectly()
+        {
+            // Track total damage
+            float totalDamageTracked = 0f;
+            _attackerComboTracker.OnComboEnded += (count, damage) => totalDamageTracked = damage;
+
+            // Land 3 hits with known damage values
+            // 1st hit: 10 * 1.0 = 10 damage
+            _attackerComboTracker.RegisterHitLanded(0, 10f);
+            yield return new WaitForFixedUpdate();
+
+            // 2nd hit: 10 * 0.75 = 7.5 damage
+            _attackerComboTracker.RegisterHitLanded(0, 10f);
+            yield return new WaitForFixedUpdate();
+
+            // 3rd hit: 10 * 0.5 = 5 damage
+            _attackerComboTracker.RegisterHitLanded(0, 10f);
+
+            // Reset and check total
+            _attackerComboTracker.ResetCombo();
+
+            // Expected total: 10 + 7.5 + 5 = 22.5
+            Assert.AreEqual(22.5f, totalDamageTracked, 0.01f, "Total damage should be 22.5");
 
             yield return null;
         }

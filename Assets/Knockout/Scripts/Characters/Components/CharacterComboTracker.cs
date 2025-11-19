@@ -30,6 +30,7 @@ namespace Knockout.Characters.Components
         private List<int> _attackSequenceHistory = new List<int>(10); // Pre-allocated for typical combo length
         private int _lastAttackFrame = -1000; // Frame when last attack landed
         private int _lastAttackTypeIndex = -1;
+        private float _totalComboDamage = 0f; // Accumulated damage for current combo
         private bool _isInitialized = false;
 
         // Counter window tracking
@@ -275,13 +276,14 @@ namespace Knockout.Characters.Components
                 // Start new combo
                 if (_comboCount > 0)
                 {
-                    // Previous combo ended
-                    OnComboEnded?.Invoke(_comboCount, 0f); // TODO: Track total damage
+                    // Previous combo ended naturally
+                    OnComboEnded?.Invoke(_comboCount, _totalComboDamage);
                 }
 
                 _comboCount = 1;
                 _attackSequenceHistory.Clear();
                 _attackSequenceHistory.Add(attackTypeIndex);
+                _totalComboDamage = 0f; // Reset damage accumulator for new combo
 
                 // Fire combo started event
                 OnComboStarted?.Invoke();
@@ -307,6 +309,9 @@ namespace Knockout.Characters.Components
 
             // Calculate final damage
             float finalDamage = baseDamage * damageMultiplier;
+
+            // Accumulate total combo damage
+            _totalComboDamage += finalDamage;
 
             // Fire combo hit event
             OnComboHitLanded?.Invoke(_comboCount, finalDamage);
@@ -340,12 +345,15 @@ namespace Knockout.Characters.Components
             if (_comboCount > 0)
             {
                 int finalCount = _comboCount;
+                float finalDamage = _totalComboDamage;
+
                 _comboCount = 0;
                 _attackSequenceHistory.Clear();
                 _lastAttackFrame = _currentFrame - 1000; // Reset to far in past
+                _totalComboDamage = 0f;
 
                 // Fire combo ended event
-                OnComboEnded?.Invoke(finalCount, 0f);
+                OnComboEnded?.Invoke(finalCount, finalDamage);
             }
         }
 
@@ -361,8 +369,9 @@ namespace Knockout.Characters.Components
                 _comboCount = 0;
                 _attackSequenceHistory.Clear();
                 _lastAttackFrame = _currentFrame - 1000; // Reset to far in past
+                _totalComboDamage = 0f;
 
-                // Fire combo broken event
+                // Fire combo broken event (note: broken combos don't fire OnComboEnded)
                 OnComboBroken?.Invoke(finalCount);
             }
         }
