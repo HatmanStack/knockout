@@ -1,4 +1,5 @@
 using UnityEngine;
+using Knockout.Characters.Data;
 
 namespace Knockout.Combat.HitDetection
 {
@@ -44,10 +45,21 @@ namespace Knockout.Combat.HitDetection
         public string AttackName;
 
         /// <summary>
+        /// Whether this hit was caused by a special move.
+        /// </summary>
+        public bool IsSpecialMove;
+
+        /// <summary>
+        /// Reference to the special move data if this is a special move hit.
+        /// </summary>
+        public SpecialMoveData SpecialMoveData;
+
+        /// <summary>
         /// Constructor to initialize all fields.
         /// </summary>
         public HitData(GameObject attacker, float damage, float knockback,
-                       Vector3 hitPoint, Vector3 hitDirection, int hitType, string attackName)
+                       Vector3 hitPoint, Vector3 hitDirection, int hitType, string attackName,
+                       bool isSpecialMove = false, SpecialMoveData specialMoveData = null)
         {
             Attacker = attacker;
             Damage = damage;
@@ -56,6 +68,8 @@ namespace Knockout.Combat.HitDetection
             HitDirection = hitDirection;
             HitType = hitType;
             AttackName = attackName;
+            IsSpecialMove = isSpecialMove;
+            SpecialMoveData = specialMoveData;
         }
     }
 }

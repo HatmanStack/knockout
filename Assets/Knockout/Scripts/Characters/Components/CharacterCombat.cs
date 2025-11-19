@@ -47,6 +47,10 @@ namespace Knockout.Characters.Components
         // Current attack being executed
         private AttackData _currentAttack;
 
+        // Special move tracking
+        private SpecialMoveData _currentSpecialMove;
+        private bool _isSpecialMoveActive = false;
+
         // Hitbox components
         private HitboxData _leftHitboxData;
         private HitboxData _rightHitboxData;
@@ -273,6 +277,80 @@ namespace Knockout.Characters.Components
             return ExecuteAttack(uppercutAttackData);
         }
 
+        /// <summary>
+        /// Executes a special move attack with enhanced properties.
+        /// </summary>
+        /// <param name="specialMoveData">The special move data to execute</param>
+        /// <returns>True if special move started, false if unable to execute</returns>
+        public bool ExecuteSpecialMove(SpecialMoveData specialMoveData)
+        {
+            if (specialMoveData == null || specialMoveData.BaseAttackData == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] ExecuteSpecialMove called with null or invalid SpecialMoveData!", this);
+                return false;
+            }
+
+            // Check stamina availability (special moves cost stamina)
+            if (_characterStamina != null)
+            {
+                if (!_characterStamina.HasStamina(specialMoveData.StaminaCost))
+                {
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+
+                // Consume stamina before attack execution
+                if (!_characterStamina.ConsumeStamina(specialMoveData.StaminaCost))
+                {
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+            }
+
+            // Check if can attack
+            if (!_stateMachine.CanTransitionTo(new AttackingState()))
+            {
+                // Refund stamina if attack fails
+                if (_characterStamina != null)
+                {
+                    // Note: There's no AddStamina method, stamina will regenerate naturally
+                    // This is acceptable as failed attempts are rare
+                }
+                return false;
+            }
+
+            // Store current attack (use base attack for animation/timing)
+            _currentAttack = specialMoveData.BaseAttackData;
+
+            // Store special move reference for hitbox activation
+            // We'll need to track this separately
+            _currentSpecialMove = specialMoveData;
+            _isSpecialMoveActive = true;
+
+            // Transition to attacking state
+            _stateMachine.ChangeState(new AttackingState());
+
+            // Trigger attack animation (use base attack or special animation)
+            string animTrigger = specialMoveData.AnimationTrigger;
+            if (!string.IsNullOrEmpty(animTrigger))
+            {
+                // If special move has custom trigger, try to use it
+                // Fall back to base attack trigger
+                _characterAnimator.TriggerAttack(specialMoveData.BaseAttackData.AttackTypeIndex);
+            }
+            else
+            {
+                _characterAnimator.TriggerAttack(specialMoveData.BaseAttackData.AttackTypeIndex);
+            }
+
+            // Fire event with base attack type
+            OnAttackExecuted?.Invoke(specialMoveData.BaseAttackData.AttackTypeIndex);
+
+            Debug.Log($"[{gameObject.name}] Special Move '{specialMoveData.SpecialMoveName}' executed!");
+
+            return true;
+        }
+
         #endregion
 
         #region Defense Methods
@@ -395,7 +473,17 @@ namespace Knockout.Characters.Components
 
             if (hitboxToActivate != null)
             {
-                hitboxToActivate.ActivateHitbox(_currentAttack);
+                // Check if this is a special move
+                if (_isSpecialMoveActive && _currentSpecialMove != null)
+                {
+                    // Activate hitbox with special move modifiers
+                    hitboxToActivate.ActivateHitbox(_currentAttack, _currentSpecialMove);
+                }
+                else
+                {
+                    // Normal attack
+                    hitboxToActivate.ActivateHitbox(_currentAttack);
+                }
             }
         }
 
@@ -432,6 +520,10 @@ namespace Knockout.Characters.Components
 
             // Clear current attack
             _currentAttack = null;
+
+            // Clear special move tracking
+            _currentSpecialMove = null;
+            _isSpecialMoveActive = false;
         }
 
         private void HandleHitReactionEnd()

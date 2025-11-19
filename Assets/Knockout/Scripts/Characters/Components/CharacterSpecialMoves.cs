@@ -254,21 +254,24 @@ namespace Knockout.Characters.Components
 
         private void ExecuteSpecialMove()
         {
-            if (specialMoveData == null || _characterStamina == null || _characterCombat == null)
+            if (specialMoveData == null || _characterCombat == null)
             {
                 return;
             }
 
-            // Consume stamina
-            // Note: This will be integrated with CharacterStamina in a future iteration
-            // For now, we just track it conceptually
+            // Execute special move attack through combat system
+            // This will handle stamina consumption, damage, knockback, and hitbox activation
+            bool success = _characterCombat.ExecuteSpecialMove(specialMoveData);
+
+            if (!success)
+            {
+                // Attack execution failed (shouldn't happen since we checked in CanUseSpecialMove)
+                Debug.LogWarning($"[{gameObject.name}] Special move execution failed unexpectedly!", this);
+                return;
+            }
 
             // Start cooldown
             _cooldownTimeRemaining = specialMoveData.CooldownSeconds;
-
-            // Execute special move attack
-            // Note: This will be integrated with CharacterCombat.ExecuteSpecialMove() in Task 4
-            // For now, we just fire the event
 
             // Fire success event
             OnSpecialMoveUsed?.Invoke(specialMoveData);

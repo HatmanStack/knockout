@@ -21,6 +21,10 @@ namespace Knockout.Combat.HitDetection
         // Current attack data while hitbox is active
         private AttackData _currentAttack;
 
+        // Special move data (if this hitbox is for a special move)
+        private SpecialMoveData _currentSpecialMove;
+        private bool _isSpecialMove = false;
+
         // Tracks which targets have been hit in current attack (prevents multi-hit)
         private HashSet<GameObject> _hitTargets = new HashSet<GameObject>();
 
@@ -87,6 +91,32 @@ namespace Knockout.Combat.HitDetection
             }
 
             _currentAttack = attackData;
+            _currentSpecialMove = null;
+            _isSpecialMove = false;
+            _hitTargets.Clear();
+
+            if (_collider != null)
+            {
+                _collider.enabled = true;
+            }
+        }
+
+        /// <summary>
+        /// Activates the hitbox for a special move attack with enhanced properties.
+        /// </summary>
+        /// <param name="attackData">Base attack data</param>
+        /// <param name="specialMoveData">Special move modifiers</param>
+        public void ActivateHitbox(AttackData attackData, SpecialMoveData specialMoveData)
+        {
+            if (attackData == null || specialMoveData == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] ActivateHitbox (special move) called with null data!", this);
+                return;
+            }
+
+            _currentAttack = attackData;
+            _currentSpecialMove = specialMoveData;
+            _isSpecialMove = true;
             _hitTargets.Clear();
 
             if (_collider != null)
@@ -107,6 +137,8 @@ namespace Knockout.Combat.HitDetection
             }
 
             _currentAttack = null;
+            _currentSpecialMove = null;
+            _isSpecialMove = false;
             _hitTargets.Clear();
         }
 
@@ -158,6 +190,12 @@ namespace Knockout.Combat.HitDetection
             // Get base damage from attack
             float baseDamage = _currentAttack != null ? _currentAttack.Damage : 0f;
 
+            // Apply special move multiplier if this is a special move
+            if (_isSpecialMove && _currentSpecialMove != null)
+            {
+                baseDamage *= _currentSpecialMove.DamageMultiplier;
+            }
+
             // Apply hurtbox damage multiplier
             float damageAfterHurtbox = baseDamage * hurtbox.DamageMultiplier;
 
@@ -179,11 +217,17 @@ namespace Knockout.Combat.HitDetection
             // Determine hit type
             int hitType = DetermineHitType(finalDamage, hurtbox);
 
-            // Get knockback
+            // Get knockback (with special move multiplier if applicable)
             float knockback = _currentAttack != null ? _currentAttack.Knockback : 0f;
+            if (_isSpecialMove && _currentSpecialMove != null)
+            {
+                knockback *= _currentSpecialMove.KnockbackMultiplier;
+            }
 
             // Get attack name
-            string attackName = _currentAttack != null ? _currentAttack.AttackName : "Unknown";
+            string attackName = _isSpecialMove && _currentSpecialMove != null
+                ? _currentSpecialMove.SpecialMoveName
+                : (_currentAttack != null ? _currentAttack.AttackName : "Unknown");
 
             return new HitData(
                 attacker: ownerCharacter,
@@ -192,7 +236,9 @@ namespace Knockout.Combat.HitDetection
                 hitPoint: hitPoint,
                 hitDirection: hitDirection,
                 hitType: hitType,
-                attackName: attackName
+                attackName: attackName,
+                isSpecialMove: _isSpecialMove,
+                specialMoveData: _currentSpecialMove
             );
         }
 
