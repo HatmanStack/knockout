@@ -21,7 +21,21 @@ Most migration tasks normally require Unity Editor, but code changes will be pre
 
 **Phases 2-7 tasks will be completed "to best ability" without Unity Editor verification.**
 
-See `UNITY_EDITOR_INSTRUCTIONS.md` for list of all tasks that normally require Unity Editor.
+### Unity Editor Task Management
+
+**IMPORTANT:** When implementing phases, ALL tasks that require Unity Editor access must be:
+
+1. **Documented in `UNITY_EDITOR_INSTRUCTIONS.md`** with detailed step-by-step instructions
+2. **Marked as incomplete** in the phase completion summary
+3. **Added to the appropriate phase section** in UNITY_EDITOR_INSTRUCTIONS.md
+
+**DO NOT** attempt Unity Editor tasks without Editor access. Instead:
+- Document what needs to be done
+- Append detailed instructions to UNITY_EDITOR_INSTRUCTIONS.md
+- Mark the task as "deferred - requires Unity Editor"
+- Continue with tasks that can be completed
+
+See `UNITY_EDITOR_INSTRUCTIONS.md` for the complete list of all tasks requiring Unity Editor across all phases.
 
 ## Prerequisites
 
@@ -82,18 +96,21 @@ See `UNITY_EDITOR_INSTRUCTIONS.md` for list of all tasks that normally require U
 ## Important Notes
 
 - **Unity Editor constraint** - Most tasks cannot be fully validated without Unity Editor
+- **Document Unity Editor tasks** - ALL Unity Editor tasks MUST be appended to `UNITY_EDITOR_INSTRUCTIONS.md` with detailed instructions
 - **Code changes are tentative** - Expect iteration when Unity Editor becomes available
 - **Documentation focus** - Phase 1 documentation can be completed fully
 - **Code changes are best-effort** - Based on API documentation and code analysis
 - **Commit atomically** - Small commits make Unity Editor validation easier
-- **Mark tasks as "prepared, not verified"** - Be honest about validation status
-- **Reference UNITY_EDITOR_INSTRUCTIONS.md** - Full list of tasks requiring Unity Editor
+- **Mark tasks as "deferred - requires Unity Editor"** - Be honest about what cannot be completed
+- **Reference UNITY_EDITOR_INSTRUCTIONS.md** - Full list of tasks requiring Unity Editor (must be kept up-to-date)
 
 ### What CAN Be Done Without Unity Editor:
 
 - Phase 0: Complete (read-only architecture decisions)
-- Phase 1: Partial (Tasks 1-4, 6-7 - documentation and research)
+- Phase 1: Partial (Tasks 2, 3, 4, 6, 7 - documentation and research)
+  - Tasks 1, 5, 8 require Unity Editor and are documented in UNITY_EDITOR_INSTRUCTIONS.md
 - Phases 2-7: Code changes can be prepared but NOT verified
+  - All Unity Editor tasks must be documented in UNITY_EDITOR_INSTRUCTIONS.md
 
 ### What CANNOT Be Done Without Unity Editor:
 
