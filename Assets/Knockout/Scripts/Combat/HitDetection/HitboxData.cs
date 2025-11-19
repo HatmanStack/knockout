@@ -159,7 +159,19 @@ namespace Knockout.Combat.HitDetection
             float baseDamage = _currentAttack != null ? _currentAttack.Damage : 0f;
 
             // Apply hurtbox damage multiplier
-            float finalDamage = baseDamage * hurtbox.DamageMultiplier;
+            float damageAfterHurtbox = baseDamage * hurtbox.DamageMultiplier;
+
+            // Apply combo damage scaling if owner has combo tracker
+            float comboMultiplier = 1.0f;
+            CharacterComboTracker comboTracker = ownerCharacter?.GetComponent<CharacterComboTracker>();
+            if (comboTracker != null && _currentAttack != null)
+            {
+                // Register hit landed and get damage multiplier (includes combo scaling + sequence bonuses)
+                comboMultiplier = comboTracker.RegisterHitLanded(_currentAttack.AttackTypeIndex, damageAfterHurtbox);
+            }
+
+            // Apply combo scaling
+            float finalDamage = damageAfterHurtbox * comboMultiplier;
 
             // Calculate hit direction
             Vector3 hitDirection = (hurtbox.transform.position - transform.position).normalized;
