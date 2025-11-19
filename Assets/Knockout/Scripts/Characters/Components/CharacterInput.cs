@@ -24,6 +24,7 @@ namespace Knockout.Characters.Components
         private InputAction _dodgeLeftAction;
         private InputAction _dodgeRightAction;
         private InputAction _dodgeBackAction;
+        private InputAction _specialMoveAction;
 
         // Input enabled state
         private bool _inputEnabled = true;
@@ -75,6 +76,11 @@ namespace Knockout.Characters.Components
         /// </summary>
         public event Action OnDodgeBackPressed;
 
+        /// <summary>
+        /// Fired when special move button is pressed.
+        /// </summary>
+        public event Action OnSpecialMovePressed;
+
         #endregion
 
         #region Unity Lifecycle
@@ -100,6 +106,7 @@ namespace Knockout.Characters.Components
                     _dodgeLeftAction = _gameplayActionMap.FindAction("DodgeLeft");
                     _dodgeRightAction = _gameplayActionMap.FindAction("DodgeRight");
                     _dodgeBackAction = _gameplayActionMap.FindAction("DodgeBack");
+                    _specialMoveAction = _gameplayActionMap.FindAction("SpecialMove");
                 }
                 else
                 {
@@ -191,6 +198,11 @@ namespace Knockout.Characters.Components
             {
                 _dodgeBackAction.performed += OnDodgeBackInput;
             }
+
+            if (_specialMoveAction != null)
+            {
+                _specialMoveAction.performed += OnSpecialMoveInput;
+            }
         }
 
         private void UnsubscribeFromInputs()
@@ -229,6 +241,11 @@ namespace Knockout.Characters.Components
             if (_dodgeBackAction != null)
             {
                 _dodgeBackAction.performed -= OnDodgeBackInput;
+            }
+
+            if (_specialMoveAction != null)
+            {
+                _specialMoveAction.performed -= OnSpecialMoveInput;
             }
         }
 
@@ -297,6 +314,14 @@ namespace Knockout.Characters.Components
             if (_inputEnabled)
             {
                 OnDodgeBackPressed?.Invoke();
+            }
+        }
+
+        private void OnSpecialMoveInput(InputAction.CallbackContext context)
+        {
+            if (_inputEnabled)
+            {
+                OnSpecialMovePressed?.Invoke();
             }
         }
 
