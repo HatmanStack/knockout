@@ -39,6 +39,7 @@ namespace Knockout.Characters.Components
 
         // Component references
         private CharacterAnimator _characterAnimator;
+        private CharacterStamina _characterStamina;
 
         // Combat state machine
         private CombatStateMachine _stateMachine;
@@ -67,6 +68,11 @@ namespace Knockout.Characters.Components
         /// Fired when blocking ends.
         /// </summary>
         public event Action OnBlockEnded;
+
+        /// <summary>
+        /// Fired when attempting to attack without sufficient stamina.
+        /// </summary>
+        public event Action OnAttackFailedNoStamina;
 
         #endregion
 
@@ -100,6 +106,7 @@ namespace Knockout.Characters.Components
         {
             // Cache component references
             _characterAnimator = GetComponent<CharacterAnimator>();
+            _characterStamina = GetComponent<CharacterStamina>();
 
             // Find hitboxes in children if not assigned
             if (leftHandHitbox == null || rightHandHitbox == null)
@@ -181,6 +188,27 @@ namespace Knockout.Characters.Components
             {
                 Debug.LogWarning($"[{gameObject.name}] ExecuteAttack called with null AttackData!", this);
                 return false;
+            }
+
+            // Check stamina availability FIRST (before state transition)
+            if (_characterStamina != null)
+            {
+                float staminaCost = _characterStamina.GetStaminaCostForAttackData(attackData);
+
+                if (!_characterStamina.HasStamina(staminaCost))
+                {
+                    // Insufficient stamina - attack fails
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+
+                // Consume stamina before attack execution
+                if (!_characterStamina.ConsumeStamina(staminaCost))
+                {
+                    // Consumption failed (shouldn't happen since we checked, but safety)
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
             }
 
             // Check if can attack

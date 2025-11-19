@@ -180,6 +180,25 @@ namespace Knockout.Tests.PlayMode.Characters
             return character;
         }
 
+        /// <summary>
+        /// Creates a character with stamina component for stamina integration tests.
+        /// </summary>
+        private GameObject CreateCharacterWithStamina()
+        {
+            GameObject character = CreateMinimalCharacter();
+
+            // Add CharacterStamina
+            CharacterStamina stamina = character.AddComponent<CharacterStamina>();
+
+            // Create and assign StaminaData
+            StaminaData staminaData = ScriptableObject.CreateInstance<StaminaData>();
+            var staminaDataField = typeof(CharacterStamina).GetField("staminaData",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            staminaDataField.SetValue(stamina, staminaData);
+
+            return character;
+        }
+
         // TODO: Implement these helper methods after prefabs are created
 
         /*
@@ -198,6 +217,130 @@ namespace Knockout.Tests.PlayMode.Characters
             throw new System.NotImplementedException("Implement after AttackData assets created");
         }
         */
+
+        #endregion
+
+        #region Stamina Integration Tests
+
+        [UnityTest]
+        public IEnumerator CharacterCombat_Attack_SucceedsWhenStaminaAvailable()
+        {
+            // Arrange
+            _testCharacter = CreateCharacterWithStamina();
+            CharacterCombat combat = _testCharacter.GetComponent<CharacterCombat>();
+            CharacterStamina stamina = _testCharacter.GetComponent<CharacterStamina>();
+
+            // Create test attack data
+            AttackData attackData = ScriptableObject.CreateInstance<AttackData>();
+            var attackTypeField = typeof(AttackData).GetField("attackTypeIndex",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            attackTypeField.SetValue(attackData, 0); // Jab
+
+            yield return null; // Wait for Start()
+
+            float initialStamina = stamina.CurrentStamina;
+
+            // Act
+            bool attackSucceeded = combat.ExecuteAttack(attackData);
+
+            // Assert
+            Assert.IsTrue(attackSucceeded, "Attack should succeed when stamina is available");
+            Assert.Less(stamina.CurrentStamina, initialStamina, "Stamina should be consumed");
+
+            // Cleanup
+            Object.DestroyImmediate(attackData);
+        }
+
+        [UnityTest]
+        public IEnumerator CharacterCombat_Attack_FailsWhenStaminaInsufficient()
+        {
+            // Arrange
+            _testCharacter = CreateCharacterWithStamina();
+            CharacterCombat combat = _testCharacter.GetComponent<CharacterCombat>();
+            CharacterStamina stamina = _testCharacter.GetComponent<CharacterStamina>();
+
+            // Create test attack data
+            AttackData attackData = ScriptableObject.CreateInstance<AttackData>();
+            var attackTypeField = typeof(AttackData).GetField("attackTypeIndex",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            attackTypeField.SetValue(attackData, 0); // Jab
+
+            yield return null; // Wait for Start()
+
+            // Deplete stamina
+            stamina.SetCurrentStamina(5f); // Less than jab cost (10)
+
+            bool attackFailedEventFired = false;
+            combat.OnAttackFailedNoStamina += () => attackFailedEventFired = true;
+
+            // Act
+            bool attackSucceeded = combat.ExecuteAttack(attackData);
+
+            // Assert
+            Assert.IsFalse(attackSucceeded, "Attack should fail when stamina insufficient");
+            Assert.IsTrue(attackFailedEventFired, "OnAttackFailedNoStamina event should fire");
+
+            // Cleanup
+            Object.DestroyImmediate(attackData);
+        }
+
+        [UnityTest]
+        public IEnumerator CharacterCombat_Attack_FailureDoesNotTransitionToAttackingState()
+        {
+            // Arrange
+            _testCharacter = CreateCharacterWithStamina();
+            CharacterCombat combat = _testCharacter.GetComponent<CharacterCombat>();
+            CharacterStamina stamina = _testCharacter.GetComponent<CharacterStamina>();
+
+            // Create test attack data
+            AttackData attackData = ScriptableObject.CreateInstance<AttackData>();
+            var attackTypeField = typeof(AttackData).GetField("attackTypeIndex",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            attackTypeField.SetValue(attackData, 0); // Jab
+
+            yield return null; // Wait for Start()
+
+            // Deplete stamina
+            stamina.SetCurrentStamina(0f);
+
+            // Act
+            combat.ExecuteAttack(attackData);
+
+            // Assert
+            Assert.IsInstanceOf<IdleState>(combat.CurrentState,
+                "Should remain in IdleState when attack fails due to stamina");
+            Assert.IsFalse(combat.IsAttacking, "IsAttacking should be false");
+
+            // Cleanup
+            Object.DestroyImmediate(attackData);
+        }
+
+        [UnityTest]
+        public IEnumerator CharacterCombat_Blocking_WorksAtZeroStamina()
+        {
+            // Arrange
+            _testCharacter = CreateCharacterWithStamina();
+            CharacterCombat combat = _testCharacter.GetComponent<CharacterCombat>();
+            CharacterStamina stamina = _testCharacter.GetComponent<CharacterStamina>();
+
+            yield return null; // Wait for Start()
+
+            // Deplete stamina
+            stamina.SetCurrentStamina(0f);
+
+            bool blockStarted = false;
+            combat.OnBlockStarted += () => blockStarted = true;
+
+            // Act
+            bool blockingSucceeded = combat.StartBlocking();
+
+            yield return null;
+
+            // Assert
+            Assert.IsTrue(blockingSucceeded, "Blocking should succeed even at 0 stamina");
+            Assert.IsTrue(blockStarted, "OnBlockStarted event should fire");
+            Assert.IsTrue(combat.IsBlocking, "Should be in blocking state");
+        }
 
         #endregion
     }
