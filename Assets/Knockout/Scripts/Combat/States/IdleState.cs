@@ -36,6 +36,7 @@ namespace Knockout.Combat.States
             // Valid transitions
             return newState is AttackingState
                 || newState is BlockingState
+                || newState is ExhaustedState
                 || newState is HitStunnedState
                 || newState is KnockedDownState
                 || newState is KnockedOutState;

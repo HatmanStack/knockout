@@ -143,6 +143,13 @@ namespace Knockout.Characters.Components
                 _characterAnimator.OnHitReactionEnd += HandleHitReactionEnd;
                 _characterAnimator.OnGetUpComplete += HandleGetUpComplete;
             }
+
+            // Subscribe to stamina events for exhaustion
+            if (_characterStamina != null)
+            {
+                _characterStamina.OnStaminaDepleted += HandleStaminaDepleted;
+                _characterStamina.OnStaminaChanged += HandleStaminaChanged;
+            }
         }
 
         private void Update()
@@ -161,6 +168,13 @@ namespace Knockout.Characters.Components
                 _characterAnimator.OnAttackEnd -= HandleAttackEnd;
                 _characterAnimator.OnHitReactionEnd -= HandleHitReactionEnd;
                 _characterAnimator.OnGetUpComplete -= HandleGetUpComplete;
+            }
+
+            // Unsubscribe from stamina events
+            if (_characterStamina != null)
+            {
+                _characterStamina.OnStaminaDepleted -= HandleStaminaDepleted;
+                _characterStamina.OnStaminaChanged -= HandleStaminaChanged;
             }
         }
 
@@ -415,6 +429,30 @@ namespace Knockout.Characters.Components
         {
             // Get up complete, return to idle
             _stateMachine.ChangeState(new IdleState());
+        }
+
+        #endregion
+
+        #region Stamina Event Handlers
+
+        private void HandleStaminaDepleted()
+        {
+            // Stamina depleted - transition to exhausted state
+            // This can happen from any state where attacking is possible
+            _stateMachine.ChangeState(new ExhaustedState());
+        }
+
+        private void HandleStaminaChanged(float currentStamina, float maxStamina)
+        {
+            // Check if in exhausted state and can recover
+            if (_stateMachine.CurrentState is ExhaustedState exhaustedState)
+            {
+                if (exhaustedState.CanRecover())
+                {
+                    // Auto-recover to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
         }
 
         #endregion

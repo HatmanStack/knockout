@@ -158,5 +158,59 @@ namespace Knockout.Tests.EditMode.Combat
                     $"{state.StateName} should be able to transition to KnockedOutState");
             }
         }
+
+        #region ExhaustedState Tests
+
+        [Test]
+        public void IdleState_CanTransitionTo_ExhaustedState()
+        {
+            var idleState = new IdleState();
+            var exhaustedState = new ExhaustedState();
+
+            Assert.IsTrue(idleState.CanTransitionTo(exhaustedState),
+                "Should be able to transition from Idle to Exhausted when stamina depletes");
+        }
+
+        [Test]
+        public void ExhaustedState_CannotTransitionTo_AttackingState()
+        {
+            var exhaustedState = new ExhaustedState();
+            var attackingState = new AttackingState();
+
+            Assert.IsFalse(exhaustedState.CanTransitionTo(attackingState),
+                "Cannot attack while exhausted");
+        }
+
+        [Test]
+        public void ExhaustedState_CanTransitionTo_BlockingState()
+        {
+            var exhaustedState = new ExhaustedState();
+            var blockingState = new BlockingState();
+
+            Assert.IsTrue(exhaustedState.CanTransitionTo(blockingState),
+                "Defensive actions allowed while exhausted");
+        }
+
+        [Test]
+        public void ExhaustedState_CanTransitionTo_HitStunnedState()
+        {
+            var exhaustedState = new ExhaustedState();
+            var hitStunnedState = new HitStunnedState();
+
+            Assert.IsTrue(exhaustedState.CanTransitionTo(hitStunnedState),
+                "Can be hit while exhausted");
+        }
+
+        [Test]
+        public void AttackingState_CanTransitionTo_ExhaustedState()
+        {
+            var attackingState = new AttackingState();
+            var exhaustedState = new ExhaustedState();
+
+            Assert.IsTrue(attackingState.CanTransitionTo(exhaustedState),
+                "Can become exhausted during attack");
+        }
+
+        #endregion
     }
 }
