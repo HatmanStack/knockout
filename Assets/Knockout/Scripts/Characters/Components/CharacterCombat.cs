@@ -1,0 +1,655 @@
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using Knockout.Combat;
+using Knockout.Combat.States;
+using Knockout.Combat.HitDetection;
+using Knockout.Characters.Data;
+
+namespace Knockout.Characters.Components
+{
+    /// <summary>
+    /// Manages character combat actions, state machine, and hitbox activation.
+    /// Coordinates attacks, defense, and combat state transitions.
+    /// </summary>
+    [RequireComponent(typeof(CharacterAnimator))]
+    public class CharacterCombat : MonoBehaviour
+    {
+        [Header("Combat Data")]
+        [SerializeField]
+        [Tooltip("Attack data for jab attack")]
+        private AttackData jabAttackData;
+
+        [SerializeField]
+        [Tooltip("Attack data for hook attack")]
+        private AttackData hookAttackData;
+
+        [SerializeField]
+        [Tooltip("Attack data for uppercut attack")]
+        private AttackData uppercutAttackData;
+
+        [Header("Hitbox References")]
+        [SerializeField]
+        [Tooltip("Left hand hitbox GameObject")]
+        private GameObject leftHandHitbox;
+
+        [SerializeField]
+        [Tooltip("Right hand hitbox GameObject")]
+        private GameObject rightHandHitbox;
+
+        // Component references
+        private CharacterAnimator _characterAnimator;
+        private CharacterStamina _characterStamina;
+
+        // Combat state machine
+        private CombatStateMachine _stateMachine;
+
+        // Current attack being executed
+        private AttackData _currentAttack;
+
+        // Special move tracking
+        private SpecialMoveData _currentSpecialMove;
+        private bool _isSpecialMoveActive = false;
+
+        // Hitbox components
+        private HitboxData _leftHitboxData;
+        private HitboxData _rightHitboxData;
+
+        #region Events
+
+        /// <summary>
+        /// Fired when an attack is executed.
+        /// Parameter: attack type (0 = jab, 1 = hook, 2 = uppercut)
+        /// </summary>
+        public event Action<int> OnAttackExecuted;
+
+        /// <summary>
+        /// Fired when blocking starts.
+        /// </summary>
+        public event Action OnBlockStarted;
+
+        /// <summary>
+        /// Fired when blocking ends.
+        /// </summary>
+        public event Action OnBlockEnded;
+
+        /// <summary>
+        /// Fired when attempting to attack without sufficient stamina.
+        /// </summary>
+        public event Action OnAttackFailedNoStamina;
+
+        /// <summary>
+        /// Fired when this character lands a hit on an opponent.
+        /// Parameters: (damage dealt, is special move)
+        /// </summary>
+        public event Action<float, bool> OnHitLanded;
+
+        /// <summary>
+        /// Fired when an attack is blocked by opponent.
+        /// </summary>
+        public event Action OnAttackBlocked;
+
+        #endregion
+
+        #region Public Properties
+
+        /// <summary>
+        /// Gets the current combat state.
+        /// </summary>
+        public CombatState CurrentState => _stateMachine?.CurrentState;
+
+        /// <summary>
+        /// Gets whether the character is currently blocking.
+        /// </summary>
+        public bool IsBlocking => CurrentState is BlockingState;
+
+        /// <summary>
+        /// Gets whether the character is currently attacking.
+        /// </summary>
+        public bool IsAttacking => CurrentState is AttackingState;
+
+        /// <summary>
+        /// Gets whether the character can currently act.
+        /// </summary>
+        public bool CanAct => CurrentState is IdleState || CurrentState is BlockingState;
+
+        #endregion
+
+        #region Unity Lifecycle
+
+        private void Awake()
+        {
+            // Cache component references
+            _characterAnimator = GetComponent<CharacterAnimator>();
+            _characterStamina = GetComponent<CharacterStamina>();
+
+            // Find hitboxes in children if not assigned
+            if (leftHandHitbox == null || rightHandHitbox == null)
+            {
+                FindHitboxes();
+            }
+
+            // Get HitboxData components
+            if (leftHandHitbox != null)
+            {
+                _leftHitboxData = leftHandHitbox.GetComponent<HitboxData>();
+            }
+
+            if (rightHandHitbox != null)
+            {
+                _rightHitboxData = rightHandHitbox.GetComponent<HitboxData>();
+            }
+
+            // Initialize state machine
+            _stateMachine = new CombatStateMachine();
+        }
+
+        private void Start()
+        {
+            // Initialize state machine with idle state
+            _stateMachine.Initialize(this, new IdleState());
+
+            // Subscribe to animator events
+            if (_characterAnimator != null)
+            {
+                _characterAnimator.OnHitboxActivate += HandleHitboxActivate;
+                _characterAnimator.OnHitboxDeactivate += HandleHitboxDeactivate;
+                _characterAnimator.OnAttackEnd += HandleAttackEnd;
+                _characterAnimator.OnHitReactionEnd += HandleHitReactionEnd;
+                _characterAnimator.OnGetUpComplete += HandleGetUpComplete;
+            }
+
+            // Subscribe to stamina events for exhaustion
+            if (_characterStamina != null)
+            {
+                _characterStamina.OnStaminaDepleted += HandleStaminaDepleted;
+                _characterStamina.OnStaminaChanged += HandleStaminaChanged;
+            }
+        }
+
+        private void Update()
+        {
+            // Update state machine
+            _stateMachine?.Update();
+
+            // Check for auto-transitions
+            HandleAutoTransitions();
+        }
+
+        private void OnDestroy()
+        {
+            // Unsubscribe from animator events
+            if (_characterAnimator != null)
+            {
+                _characterAnimator.OnHitboxActivate -= HandleHitboxActivate;
+                _characterAnimator.OnHitboxDeactivate -= HandleHitboxDeactivate;
+                _characterAnimator.OnAttackEnd -= HandleAttackEnd;
+                _characterAnimator.OnHitReactionEnd -= HandleHitReactionEnd;
+                _characterAnimator.OnGetUpComplete -= HandleGetUpComplete;
+            }
+
+            // Unsubscribe from stamina events
+            if (_characterStamina != null)
+            {
+                _characterStamina.OnStaminaDepleted -= HandleStaminaDepleted;
+                _characterStamina.OnStaminaChanged -= HandleStaminaChanged;
+            }
+        }
+
+        private void OnValidate()
+        {
+            // Auto-find hitboxes in editor
+            if (leftHandHitbox == null || rightHandHitbox == null)
+            {
+                FindHitboxes();
+            }
+        }
+
+        #endregion
+
+        #region Attack Methods
+
+        /// <summary>
+        /// Executes an attack with the specified attack data.
+        /// </summary>
+        /// <param name="attackData">The attack data to execute</param>
+        /// <returns>True if attack started, false if unable to attack</returns>
+        public bool ExecuteAttack(AttackData attackData)
+        {
+            if (attackData == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] ExecuteAttack called with null AttackData!", this);
+                return false;
+            }
+
+            // Check stamina availability FIRST (before state transition)
+            if (_characterStamina != null)
+            {
+                float staminaCost = _characterStamina.GetStaminaCostForAttackData(attackData);
+
+                if (!_characterStamina.HasStamina(staminaCost))
+                {
+                    // Insufficient stamina - attack fails
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+
+                // Consume stamina before attack execution
+                if (!_characterStamina.ConsumeStamina(staminaCost))
+                {
+                    // Consumption failed (shouldn't happen since we checked, but safety)
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+            }
+
+            // Check if can attack
+            if (!_stateMachine.CanTransitionTo(new AttackingState()))
+            {
+                return false;
+            }
+
+            // Store current attack
+            _currentAttack = attackData;
+
+            // Transition to attacking state
+            _stateMachine.ChangeState(new AttackingState());
+
+            // Trigger attack animation
+            _characterAnimator.TriggerAttack(attackData.AttackTypeIndex);
+
+            // Fire event with attack type
+            OnAttackExecuted?.Invoke(attackData.AttackTypeIndex);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Executes a jab attack.
+        /// </summary>
+        public bool ExecuteJab()
+        {
+            return ExecuteAttack(jabAttackData);
+        }
+
+        /// <summary>
+        /// Executes a hook attack.
+        /// </summary>
+        public bool ExecuteHook()
+        {
+            return ExecuteAttack(hookAttackData);
+        }
+
+        /// <summary>
+        /// Executes an uppercut attack.
+        /// </summary>
+        public bool ExecuteUppercut()
+        {
+            return ExecuteAttack(uppercutAttackData);
+        }
+
+        /// <summary>
+        /// Executes a special move attack with enhanced properties.
+        /// </summary>
+        /// <param name="specialMoveData">The special move data to execute</param>
+        /// <returns>True if special move started, false if unable to execute</returns>
+        public bool ExecuteSpecialMove(SpecialMoveData specialMoveData)
+        {
+            if (specialMoveData == null || specialMoveData.BaseAttackData == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] ExecuteSpecialMove called with null or invalid SpecialMoveData!", this);
+                return false;
+            }
+
+            // Check stamina availability (special moves cost stamina)
+            if (_characterStamina != null)
+            {
+                if (!_characterStamina.HasStamina(specialMoveData.StaminaCost))
+                {
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+
+                // Consume stamina before attack execution
+                if (!_characterStamina.ConsumeStamina(specialMoveData.StaminaCost))
+                {
+                    OnAttackFailedNoStamina?.Invoke();
+                    return false;
+                }
+            }
+
+            // Check if can attack
+            if (!_stateMachine.CanTransitionTo(new AttackingState()))
+            {
+                // Refund stamina if attack fails
+                if (_characterStamina != null)
+                {
+                    // Note: There's no AddStamina method, stamina will regenerate naturally
+                    // This is acceptable as failed attempts are rare
+                }
+                return false;
+            }
+
+            // Store current attack (use base attack for animation/timing)
+            _currentAttack = specialMoveData.BaseAttackData;
+
+            // Store special move reference for hitbox activation
+            // We'll need to track this separately
+            _currentSpecialMove = specialMoveData;
+            _isSpecialMoveActive = true;
+
+            // Transition to attacking state
+            _stateMachine.ChangeState(new AttackingState());
+
+            // Trigger attack animation (use base attack or special animation)
+            string animTrigger = specialMoveData.AnimationTrigger;
+            if (!string.IsNullOrEmpty(animTrigger))
+            {
+                // If special move has custom trigger, try to use it
+                // Fall back to base attack trigger
+                _characterAnimator.TriggerAttack(specialMoveData.BaseAttackData.AttackTypeIndex);
+            }
+            else
+            {
+                _characterAnimator.TriggerAttack(specialMoveData.BaseAttackData.AttackTypeIndex);
+            }
+
+            // Fire event with base attack type
+            OnAttackExecuted?.Invoke(specialMoveData.BaseAttackData.AttackTypeIndex);
+
+            Debug.Log($"[{gameObject.name}] Special Move '{specialMoveData.SpecialMoveName}' executed!");
+
+            return true;
+        }
+
+        /// <summary>
+        /// Called by hit detection system when this character's attack lands on opponent.
+        /// </summary>
+        /// <param name="damageDealt">Amount of damage dealt</param>
+        /// <param name="wasBlocked">Whether the hit was blocked</param>
+        public void NotifyHitLanded(float damageDealt, bool wasBlocked)
+        {
+            if (wasBlocked)
+            {
+                OnAttackBlocked?.Invoke();
+            }
+            else
+            {
+                // Fire hit landed event
+                OnHitLanded?.Invoke(damageDealt, _isSpecialMoveActive);
+            }
+        }
+
+        #endregion
+
+        #region Defense Methods
+
+        /// <summary>
+        /// Starts blocking.
+        /// </summary>
+        public bool StartBlocking()
+        {
+            // Check if can block
+            if (!_stateMachine.CanTransitionTo(new BlockingState()))
+            {
+                return false;
+            }
+
+            // Transition to blocking state
+            _stateMachine.ChangeState(new BlockingState());
+
+            // Trigger block animation
+            _characterAnimator.SetBlocking(true);
+
+            // Fire event
+            OnBlockStarted?.Invoke();
+
+            return true;
+        }
+
+        /// <summary>
+        /// Stops blocking.
+        /// </summary>
+        public void StopBlocking()
+        {
+            // Only stop blocking if currently blocking
+            if (!IsBlocking)
+            {
+                return;
+            }
+
+            // Transition back to idle
+            _stateMachine.ChangeState(new IdleState());
+
+            // Stop block animation
+            _characterAnimator.SetBlocking(false);
+
+            // Fire event
+            OnBlockEnded?.Invoke();
+        }
+
+        #endregion
+
+        #region Hit Reaction Methods
+
+        /// <summary>
+        /// Triggers a hit reaction based on hit type.
+        /// Called by CharacterHealth when damage is taken.
+        /// </summary>
+        /// <param name="hitType">0=light, 1=medium, 2=heavy</param>
+        public void TriggerHitReaction(int hitType)
+        {
+            // Transition to hit stunned state
+            _stateMachine.ChangeState(new HitStunnedState());
+
+            // Trigger hit reaction animation
+            _characterAnimator.TriggerHitReaction(hitType);
+        }
+
+        /// <summary>
+        /// Triggers a knockdown.
+        /// Called by CharacterHealth.
+        /// </summary>
+        public void TriggerKnockdown()
+        {
+            // Transition to knocked down state
+            _stateMachine.ChangeState(new KnockedDownState());
+
+            // Trigger knockdown animation
+            _characterAnimator.TriggerKnockdown();
+        }
+
+        /// <summary>
+        /// Triggers a knockout.
+        /// Called by CharacterHealth when health reaches zero.
+        /// </summary>
+        public void TriggerKnockout()
+        {
+            // Transition to knocked out state
+            _stateMachine.ChangeState(new KnockedOutState());
+
+            // Trigger knockout animation
+            _characterAnimator.TriggerKnockout();
+        }
+
+        /// <summary>
+        /// Triggers a special knockdown.
+        /// Called by hit detection when hit by special move (Phase 4).
+        /// </summary>
+        public void TriggerSpecialKnockdown()
+        {
+            // Transition to special knockdown state
+            _stateMachine.ChangeState(new SpecialKnockdownState());
+
+            // Animation is triggered by SpecialKnockdownState.Enter()
+        }
+
+        #endregion
+
+        #region Hitbox Management
+
+        private void HandleHitboxActivate()
+        {
+            if (_currentAttack == null)
+            {
+                Debug.LogWarning($"[{gameObject.name}] Hitbox activation event but no current attack!", this);
+                return;
+            }
+
+            // Determine which hitbox to activate based on attack
+            // For now, activate both (later can be refined per attack)
+            HitboxData hitboxToActivate = DetermineActiveHitbox(_currentAttack);
+
+            if (hitboxToActivate != null)
+            {
+                // Check if this is a special move
+                if (_isSpecialMoveActive && _currentSpecialMove != null)
+                {
+                    // Activate hitbox with special move modifiers
+                    hitboxToActivate.ActivateHitbox(_currentAttack, _currentSpecialMove);
+                }
+                else
+                {
+                    // Normal attack
+                    hitboxToActivate.ActivateHitbox(_currentAttack);
+                }
+            }
+        }
+
+        private void HandleHitboxDeactivate()
+        {
+            // Deactivate all hitboxes
+            if (_leftHitboxData != null)
+            {
+                _leftHitboxData.DeactivateHitbox();
+            }
+
+            if (_rightHitboxData != null)
+            {
+                _rightHitboxData.DeactivateHitbox();
+            }
+        }
+
+        private HitboxData DetermineActiveHitbox(AttackData attack)
+        {
+            // Simple logic: alternate between left and right
+            // Can be enhanced later based on attack type or animation
+            // For now, use right hand for most attacks
+            return _rightHitboxData != null ? _rightHitboxData : _leftHitboxData;
+        }
+
+        #endregion
+
+        #region Animation Event Handlers
+
+        private void HandleAttackEnd()
+        {
+            // Attack complete, return to idle
+            _stateMachine.ChangeState(new IdleState());
+
+            // Clear current attack
+            _currentAttack = null;
+
+            // Clear special move tracking
+            _currentSpecialMove = null;
+            _isSpecialMoveActive = false;
+        }
+
+        private void HandleHitReactionEnd()
+        {
+            // Hit stun over, return to idle
+            _stateMachine.ChangeState(new IdleState());
+        }
+
+        private void HandleGetUpComplete()
+        {
+            // Get up complete, return to idle
+            _stateMachine.ChangeState(new IdleState());
+        }
+
+        #endregion
+
+        #region Stamina Event Handlers
+
+        private void HandleStaminaDepleted()
+        {
+            // Stamina depleted - transition to exhausted state
+            // This can happen from any state where attacking is possible
+            _stateMachine.ChangeState(new ExhaustedState());
+        }
+
+        private void HandleStaminaChanged(float currentStamina, float maxStamina)
+        {
+            // Check if in exhausted state and can recover
+            if (_stateMachine.CurrentState is ExhaustedState exhaustedState)
+            {
+                if (exhaustedState.CanRecover())
+                {
+                    // Auto-recover to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Handles auto-transitions for states that complete based on internal criteria.
+        /// </summary>
+        private void HandleAutoTransitions()
+        {
+            // Check if dodging state is complete
+            if (_stateMachine.CurrentState is DodgingState dodgingState)
+            {
+                if (dodgingState.IsDodgeComplete())
+                {
+                    // Auto-transition to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
+
+            // Check if parry stagger is complete
+            if (_stateMachine.CurrentState is ParryStaggerState parryStaggerState)
+            {
+                if (parryStaggerState.IsStaggerComplete())
+                {
+                    // Auto-transition to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        private void FindHitboxes()
+        {
+            // Find hitbox container
+            Transform hitboxesContainer = transform.Find("Hitboxes");
+            if (hitboxesContainer == null)
+            {
+                return;
+            }
+
+            // Find left and right hand hitboxes
+            if (leftHandHitbox == null)
+            {
+                Transform leftHand = hitboxesContainer.Find("Hitbox_LeftHand");
+                if (leftHand != null)
+                {
+                    leftHandHitbox = leftHand.gameObject;
+                }
+            }
+
+            if (rightHandHitbox == null)
+            {
+                Transform rightHand = hitboxesContainer.Find("Hitbox_RightHand");
+                if (rightHand != null)
+                {
+                    rightHandHitbox = rightHand.gameObject;
+                }
+            }
+        }
+
+        #endregion
+    }
+}
