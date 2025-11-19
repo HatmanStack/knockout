@@ -23,6 +23,10 @@ namespace Knockout.Characters.Data
         [Tooltip("Knockback force applied to the target")]
         private float knockback = 0.5f;
 
+        [SerializeField]
+        [Tooltip("Stamina cost for this attack (0 = use default from StaminaData based on attack type)")]
+        private float staminaCost = 0f;
+
         [Header("Frame Data (at 60fps)")]
         [SerializeField]
         [Tooltip("Number of frames before hitbox activates")]
@@ -49,6 +53,13 @@ namespace Knockout.Characters.Data
         public string AttackName => attackName;
         public float Damage => damage;
         public float Knockback => knockback;
+
+        /// <summary>
+        /// Stamina cost for this attack.
+        /// If 0, uses default cost from StaminaData based on attack type.
+        /// </summary>
+        public float StaminaCost => staminaCost;
+
         public int StartupFrames => startupFrames;
         public int ActiveFrames => activeFrames;
         public int RecoveryFrames => recoveryFrames;
@@ -64,5 +75,11 @@ namespace Knockout.Characters.Data
         /// Total duration of the attack in seconds (at 60fps).
         /// </summary>
         public float TotalDuration => TotalFrames / 60f;
+
+        private void OnValidate()
+        {
+            // Clamp stamina cost to non-negative values
+            staminaCost = Mathf.Max(0f, staminaCost);
+        }
     }
 }
