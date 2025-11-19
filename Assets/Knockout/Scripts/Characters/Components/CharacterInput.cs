@@ -21,6 +21,9 @@ namespace Knockout.Characters.Components
         private InputAction _hookAction;
         private InputAction _uppercutAction;
         private InputAction _blockAction;
+        private InputAction _dodgeLeftAction;
+        private InputAction _dodgeRightAction;
+        private InputAction _dodgeBackAction;
 
         // Input enabled state
         private bool _inputEnabled = true;
@@ -57,6 +60,21 @@ namespace Knockout.Characters.Components
         /// </summary>
         public event Action OnBlockReleased;
 
+        /// <summary>
+        /// Fired when dodge left button is pressed.
+        /// </summary>
+        public event Action OnDodgeLeftPressed;
+
+        /// <summary>
+        /// Fired when dodge right button is pressed.
+        /// </summary>
+        public event Action OnDodgeRightPressed;
+
+        /// <summary>
+        /// Fired when dodge back button is pressed.
+        /// </summary>
+        public event Action OnDodgeBackPressed;
+
         #endregion
 
         #region Unity Lifecycle
@@ -79,6 +97,9 @@ namespace Knockout.Characters.Components
                     _hookAction = _gameplayActionMap.FindAction("Hook");
                     _uppercutAction = _gameplayActionMap.FindAction("Uppercut");
                     _blockAction = _gameplayActionMap.FindAction("Block");
+                    _dodgeLeftAction = _gameplayActionMap.FindAction("DodgeLeft");
+                    _dodgeRightAction = _gameplayActionMap.FindAction("DodgeRight");
+                    _dodgeBackAction = _gameplayActionMap.FindAction("DodgeBack");
                 }
                 else
                 {
@@ -155,6 +176,21 @@ namespace Knockout.Characters.Components
                 _blockAction.started += OnBlockInput;
                 _blockAction.canceled += OnBlockCanceled;
             }
+
+            if (_dodgeLeftAction != null)
+            {
+                _dodgeLeftAction.performed += OnDodgeLeftInput;
+            }
+
+            if (_dodgeRightAction != null)
+            {
+                _dodgeRightAction.performed += OnDodgeRightInput;
+            }
+
+            if (_dodgeBackAction != null)
+            {
+                _dodgeBackAction.performed += OnDodgeBackInput;
+            }
         }
 
         private void UnsubscribeFromInputs()
@@ -178,6 +214,21 @@ namespace Knockout.Characters.Components
             {
                 _blockAction.started -= OnBlockInput;
                 _blockAction.canceled -= OnBlockCanceled;
+            }
+
+            if (_dodgeLeftAction != null)
+            {
+                _dodgeLeftAction.performed -= OnDodgeLeftInput;
+            }
+
+            if (_dodgeRightAction != null)
+            {
+                _dodgeRightAction.performed -= OnDodgeRightInput;
+            }
+
+            if (_dodgeBackAction != null)
+            {
+                _dodgeBackAction.performed -= OnDodgeBackInput;
             }
         }
 
@@ -222,6 +273,30 @@ namespace Knockout.Characters.Components
             if (_inputEnabled)
             {
                 OnBlockReleased?.Invoke();
+            }
+        }
+
+        private void OnDodgeLeftInput(InputAction.CallbackContext context)
+        {
+            if (_inputEnabled)
+            {
+                OnDodgeLeftPressed?.Invoke();
+            }
+        }
+
+        private void OnDodgeRightInput(InputAction.CallbackContext context)
+        {
+            if (_inputEnabled)
+            {
+                OnDodgeRightPressed?.Invoke();
+            }
+        }
+
+        private void OnDodgeBackInput(InputAction.CallbackContext context)
+        {
+            if (_inputEnabled)
+            {
+                OnDodgeBackPressed?.Invoke();
             }
         }
 
