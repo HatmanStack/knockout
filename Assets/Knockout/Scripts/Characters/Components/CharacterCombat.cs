@@ -484,6 +484,16 @@ namespace Knockout.Characters.Components
                     _stateMachine.ChangeState(new IdleState());
                 }
             }
+
+            // Check if parry stagger is complete
+            if (_stateMachine.CurrentState is ParryStaggerState parryStaggerState)
+            {
+                if (parryStaggerState.IsStaggerComplete())
+                {
+                    // Auto-transition to idle state
+                    _stateMachine.ChangeState(new IdleState());
+                }
+            }
         }
 
         #endregion
