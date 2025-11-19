@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using Knockout.Combat.HitDetection;
 using Knockout.Characters.Data;
+using Knockout.Combat.States;
 
 namespace Knockout.Characters.Components
 {
@@ -19,6 +20,7 @@ namespace Knockout.Characters.Components
         // Component references
         private CharacterAnimator _characterAnimator;
         private CharacterCombat _characterCombat;
+        private CombatStateMachine _combatStateMachine;
 
         // Current health state
         private float _currentHealth;
@@ -41,6 +43,11 @@ namespace Knockout.Characters.Components
         /// Fired when hit is taken.
         /// </summary>
         public event Action<HitData> OnHitTaken;
+
+        /// <summary>
+        /// Fired when hit is dodged (during i-frames).
+        /// </summary>
+        public event Action<HitData> OnHitDodged;
 
         #endregion
 
@@ -75,6 +82,7 @@ namespace Knockout.Characters.Components
             // Cache component references
             _characterAnimator = GetComponent<CharacterAnimator>();
             _characterCombat = GetComponent<CharacterCombat>();
+            _combatStateMachine = GetComponent<CombatStateMachine>();
         }
 
         private void Start()
@@ -110,6 +118,14 @@ namespace Knockout.Characters.Components
             if (_isDead)
             {
                 return; // Already dead, ignore further damage
+            }
+
+            // Check for dodge i-frame invulnerability
+            if (IsInvulnerable())
+            {
+                // Hit dodged - no damage applied
+                OnHitDodged?.Invoke(hitData);
+                return;
             }
 
             // Calculate final damage with modifiers
@@ -158,6 +174,25 @@ namespace Knockout.Characters.Components
             }
 
             return damage;
+        }
+
+        /// <summary>
+        /// Checks if character is currently invulnerable (e.g., during dodge i-frames).
+        /// </summary>
+        private bool IsInvulnerable()
+        {
+            if (_combatStateMachine == null)
+            {
+                return false;
+            }
+
+            // Check if in dodging state with active i-frames
+            if (_combatStateMachine.CurrentState is DodgingState dodgingState)
+            {
+                return dodgingState.IsInvulnerable;
+            }
+
+            return false;
         }
 
         #endregion
