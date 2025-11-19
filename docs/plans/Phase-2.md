@@ -1,741 +1,582 @@
-# Phase 2: Attack Execution
+# Phase 2: Unity 6 Upgrade Execution
 
 ## Phase Goal
 
-Extend the trained movement agent with physics-based attack execution. The agent will learn to throw jabs, hooks, and uppercuts with realistic weight transfer, force application, and timing. By the end of this phase, agents will engage in dynamic striking exchanges with physically accurate punch mechanics.
+Upgrade the Knockout project from Unity 2021.3.45f2 to Unity 6.0 by opening the project in Unity 6, allowing automatic migration, and fixing immediate compilation errors. This phase focuses on getting the project to compile and open in Unity 6, not on achieving full functionality.
 
 **Success Criteria:**
-- Attack actions added to PhysicsAgent action space
-- Attack observations include opponent vulnerability and attack opportunities
-- Physics controllers apply forces during punches for weight transfer
-- Attack reward function encourages effective striking
-- Agent trains via self-play and learns when/how to attack
-- Trained agent lands hits, varies punch types, and shows realistic striking form
+- Project opens in Unity 6.0 without fatal errors
+- Unity automatic migration completes successfully
+- All scripts compile (no compilation errors in Console)
+- Editor is functional (can navigate, open scenes, enter Play mode)
+- Changes committed with "post-unity6-upgrade" tag
 
-**Estimated tokens:** ~85,000
+**Estimated tokens:** ~24,000
+
+---
 
 ## Prerequisites
 
-- Phase 0 completed (architecture foundation)
-- Phase 1 completed (movement agent trained and working)
-- `movement_phase1.onnx` model available for transfer learning
-- Existing CharacterCombat system understood
-- AttackData ScriptableObjects exist for jab, hook, uppercut
+- Phase 1 complete (backups created, baselines established)
+- Unity 6.0 LTS installed
+- Git tag "pre-unity6-upgrade" exists
+- External backup verified
+- All changes committed
 
 ---
 
-## Task 1: Expand Observation Space for Attacks
+## Tasks
 
-**Goal:** Add observations that help the agent decide when and how to attack.
+### Task 1: Open Project in Unity 6.0 for First Time
+
+**Goal:** Launch Unity 6 and open the Knockout project, allowing automatic upgrade to proceed
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentObservations.cs` (modify)
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
+- `ProjectSettings/ProjectVersion.txt` (Unity will modify automatically)
+- `Packages/manifest.json` (Unity may update automatically)
+- Various `.meta` files (Unity may update)
 
 **Prerequisites:**
-- Phase 1 observations working correctly
-- Understanding of attack timing and ranges
+- Phase 1 complete
+- Unity 6.0 installed
 
 **Implementation Steps:**
 
-1. **Add attack opportunity observations** (~8 new observations):
-   - Opponent vulnerability (boolean): Is opponent in recovery/hit-stun/attacking?
-   - Opponent guard state (boolean): Is opponent blocking?
-   - Attack range for jab (boolean): Within jab range (shorter)
-   - Attack range for hook (boolean): Within hook range (medium)
-   - Attack range for uppercut (boolean): Within uppercut range (close)
-   - Time since self's last attack (normalized): Prevents spam, encourages timing
-   - Opponent's recent movement direction (2D vector): Predict where opponent is moving
-   - Relative velocity to opponent (normalized): Closing or separating?
-
-2. **Add attack cooldown observations** (~3 observations):
-   - Jab cooldown remaining (normalized to attack duration)
-   - Hook cooldown remaining
-   - Uppercut cooldown remaining
-   - Get from CharacterCombat component
-
-3. **Add opponent attack prediction observations** (~4 observations):
-   - Opponent's attack windup detection (boolean): Is opponent starting attack animation?
-   - Opponent's attack type being thrown (one-hot 3D: jab/hook/uppercut)
-   - Time until opponent attack lands (normalized): Helps with defensive reactions (Phase 4)
-
-4. **Update total observation count**:
-   - Previous Phase 1 observations: ~54
-   - New attack observations: ~15
-   - New total: ~69 observations
-   - Update BehaviorParameters Vector Observation Space Size to 69
-
-5. **Integrate new observations in CollectObservations()**:
-   - Add new observation section clearly labeled "Attack Opportunity Observations"
-   - Maintain observation order consistency
-   - Normalize all continuous values properly
+1. **IMPORTANT:** Close Unity 2021.3 if it's open
+2. Launch Unity Hub
+3. In Unity Hub, find the Knockout project in your projects list
+4. Click the project, then change the Unity version dropdown to Unity 6.0.x
+5. Unity Hub will warn you about upgrading - **confirm and proceed**
+6. Unity 6 will launch and begin opening the project
+7. Unity will show "Upgrading" dialog - **allow it to complete** (may take several minutes)
+8. Watch for the "API Update Required" dialog:
+   - Unity's API Updater will run automatically
+   - Review the proposed changes if shown
+   - Accept the automated updates
+9. Wait for Unity to finish importing all assets (this may take 10-30 minutes)
+10. Once import completes, check the Console for errors
+11. **Do not close Unity yet** - proceed to next task
 
 **Verification Checklist:**
-- [ ] Observation space size updated to ~69 in BehaviorParameters
-- [ ] New observations calculated correctly without errors
-- [ ] Opponent vulnerability detection working (test in Heuristic mode)
-- [ ] Attack range booleans accurate (verify distances)
-- [ ] No NaN values in new observations
+- [ ] Unity 6 opened the project successfully
+- [ ] API Updater completed (dialog shown and accepted)
+- [ ] Asset import finished (progress bar complete)
+- [ ] Console is visible (may have errors - this is expected)
+- [ ] Project view shows assets (folders visible)
 
 **Testing Instructions:**
-- Unit tests for attack range calculations
-- Manual testing: verify attack opportunity observations update correctly as characters move
-- Verify observations in TensorBoard during training (check ranges)
+- Check Console for error count (errors expected at this stage)
+- Verify Project window shows `Assets/` folder structure
+- Verify Scene Hierarchy is visible (even if scene not loaded)
+- Confirm Unity Editor is responsive (not frozen)
 
 **Commit Message Template:**
 ```
-feat(observations): add attack opportunity observations
+chore(migration): open project in Unity 6.0 for first time
 
-- Added opponent vulnerability and guard state observations
-- Added attack range booleans for jab/hook/uppercut
-- Added attack cooldown tracking observations
-- Added opponent attack prediction observations
-- Updated observation space size to 69 dimensions
-- Integrated new observations in CollectObservations
-- Added unit tests for attack range detection
+Unity automatic upgrade process completed
+API Updater ran successfully
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~7,000
+**Estimated tokens:** ~3,000
 
 ---
 
-## Task 2: Expand Action Space for Attacks
+### Task 2: Review and Document Initial Errors
 
-**Goal:** Add continuous attack actions to control punch selection, timing, and force.
+**Goal:** Catalog all compilation errors to understand the scope of fixes needed
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentActions.cs` (modify)
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify)
+- `docs/migration/PHASE2_ERRORS.md` (new file to create)
 
 **Prerequisites:**
-- Task 1 completed (attack observations added)
-- Phase 1 movement actions working
+- Task 1 complete (Unity 6 open with project loaded)
 
 **Implementation Steps:**
 
-1. **Expand action space** from 8 to 15 continuous actions:
-   - **Movement actions** (indices 0-7): Unchanged from Phase 1
-   - **Attack type** (index 8): Continuous [0, 1] discretized to 4 options:
-     - 0.00-0.25: No attack
-     - 0.25-0.50: Jab
-     - 0.50-0.75: Hook
-     - 0.75-1.00: Uppercut
-   - **Attack hand** (index 9): Continuous [0, 1] discretized to left (0-0.5) or right (0.5-1.0)
-   - **Attack force multiplier** (index 10): Continuous [0.5, 1.5] - intensity of punch
-   - **Attack timing offset** (index 11): Continuous [-0.1, 0.1] seconds - early/late attack
-   - **Follow-through intensity** (index 12): Continuous [0, 1] - how much to commit to punch
-   - **Unused** (indices 13-14): Reserved for future phases
-
-2. **Update BehaviorParameters**:
-   - Set Vector Action Space Size to 15
-
-3. **Implement attack action interpretation**:
-   - In OnActionReceived, extract attack actions (indices 8-12)
-   - Store in private fields for execution in FixedUpdate
-   - Discretize attack type using threshold logic
-   - Map force multiplier to valid range
-   - Clamp all values appropriately
-
-4. **Create attack execution logic**:
-   - In FixedUpdate, check if attack action requested
-   - Verify attack can execute (not in cooldown, not already attacking)
-   - Call CharacterCombat methods:
-     - ExecuteJab(isLeftHand, forceMultiplier)
-     - ExecuteHook(isLeftHand, forceMultiplier)
-     - ExecuteUppercut(isLeftHand, forceMultiplier)
-   - May need to extend CharacterCombat to accept force multiplier parameter
-
-5. **Handle attack state**:
-   - Track if attack is currently executing
-   - Prevent movement during attack (set movement input to zero or reduced)
-   - Allow agent to queue next action during attack recovery
-
-6. **Update Heuristic method**:
-   - Map keyboard to attack actions:
-     - Q/E: Jab left/right
-     - 1/2: Hook left/right
-     - Z/C: Uppercut left/right
-   - Shift held: Increase force multiplier
-   - Allows manual testing of attack system
+1. In Unity Editor, open the Console window (Window > General > Console)
+2. Click "Clear on Play" and "Error Pause" to disable them
+3. Click "Collapse" to group similar errors
+4. Count total number of unique errors
+5. Create `docs/migration/PHASE2_ERRORS.md` file (outside Unity, in your text editor)
+6. For each unique error, document:
+   - Error message (full text)
+   - Affected file(s)
+   - Error category (API change, namespace change, obsolete API, etc.)
+7. Group errors by category to identify patterns
+8. Prioritize errors:
+   - **Critical:** Prevent compilation entirely
+   - **High:** Affect core systems (combat, AI, character controller)
+   - **Medium:** Affect secondary systems (UI, audio)
+   - **Low:** Affect utilities or test helpers
+9. Save documentation file
 
 **Verification Checklist:**
-- [ ] Action space size updated to 15 in BehaviorParameters
-- [ ] Attack type discretization works correctly
-- [ ] Attacks execute via CharacterCombat
-- [ ] Force multiplier affects attack damage/force
-- [ ] Heuristic control allows manual attack testing
-- [ ] Attack cooldowns respected
+- [ ] `docs/migration/PHASE2_ERRORS.md` exists
+- [ ] Total error count documented
+- [ ] All unique errors cataloged
+- [ ] Errors grouped by category
+- [ ] Errors prioritized
 
 **Testing Instructions:**
-- Manual testing in Heuristic mode:
-  - Execute each attack type with keyboard
-  - Verify attacks trigger animations
-  - Verify hits register on opponent
-  - Test force multiplier affects hit impact
-- Unit tests for action discretization logic
+- Review PHASE2_ERRORS.md for completeness
+- Verify error count matches Console
+- Confirm categorization makes sense
+- Check that priorities align with project architecture
 
 **Commit Message Template:**
 ```
-feat(actions): add attack execution actions
+docs(migration): catalog Unity 6 compilation errors
 
-- Expanded action space from 8 to 15 continuous actions
-- Added attack type selection (none/jab/hook/uppercut)
-- Added attack hand selection (left/right)
-- Added attack force multiplier and timing offset
-- Added follow-through intensity control
-- Implemented attack action interpretation and execution
-- Integrated with CharacterCombat system
-- Updated Heuristic method with attack key bindings
-- Extended CharacterCombat to accept force parameters
+Documented [X] unique errors across [Y] categories
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~8,000
+**Estimated tokens:** ~3,500
 
 ---
 
-## Task 3: Implement Attack Physics Controllers
+### Task 3: Fix Critical Compilation Errors (Namespace Changes)
 
-**Goal:** Create physics controllers that apply forces during attacks for realistic weight transfer, punch velocity, and follow-through.
+**Goal:** Fix namespace import errors that prevent compilation
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Scripts/AI/PhysicsControllers/AttackController.cs` (new)
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgent.cs` (modify to use controller)
+- Various `.cs` files with namespace errors (determined from Console errors)
 
 **Prerequisites:**
-- Task 2 completed (attack actions added)
-- Understanding of punch biomechanics (weight shift, rotation, arm extension)
+- Task 2 complete (errors documented)
 
 **Implementation Steps:**
 
-1. **Create AttackController class**:
-   - Serialized parameters:
-     - Punch force magnitude (base force for different punch types)
-     - Weight transfer speed (how fast to shift CoM during punch)
-     - Torso rotation amount (body twist during hook/uppercut)
-     - Follow-through distance
-     - Recovery force (return to neutral stance)
-
-2. **Implement weight transfer during attacks**:
-   - Method: `ApplyAttackWeightTransfer(AttackType type, float intensity)`
-   - For jab: Quick weight shift forward (CoM moves toward front foot)
-   - For hook: Lateral weight shift + torso rotation
-   - For uppercut: Dip then rise (lower CoM then raise during punch)
-   - Use Rigidbody.centerOfMass to shift weight
-   - Apply over duration of attack animation
-
-3. **Implement punch force application**:
-   - Method: `ApplyPunchForce(Rigidbody rb, AttackData attack, float multiplier)`
-   - Apply forward force to Rigidbody during active frames of attack
-   - Force direction based on punch type:
-     - Jab: Straight forward
-     - Hook: Arc (lateral component)
-     - Uppercut: Upward angle
-   - Magnitude based on attack damage * force multiplier
-   - Add slight forward momentum to character (step into punch)
-
-4. **Implement torso rotation for hooks**:
-   - Method: `ApplyTorsoRotation(float angle)`
-   - Rotate torso/spine bone (if using humanoid rig) during hook
-   - Or apply torque to Rigidbody
-   - Adds rotational power to hook punches
-   - Reset rotation during recovery
-
-5. **Implement follow-through mechanics**:
-   - Method: `ApplyFollowThrough(float intensity)`
-   - After hit/miss, arm continues forward briefly
-   - Higher intensity = more committed, longer recovery
-   - Lower intensity = safer, quicker recovery
-   - Affects recovery time before next action
-
-6. **Implement recovery physics**:
-   - Method: `ApplyRecoveryForce()`
-   - Return weight to center after attack
-   - Reset CoM to neutral position
-   - Apply restoring force using PD controller
-   - Smooth transition back to idle/movement state
-
-7. **Synchronize with animations**:
-   - Use animation events or track animation progress
-   - Apply physics forces at key moments:
-     - Weight shift: Start of attack animation
-     - Punch force: Active frames (when hitbox active)
-     - Follow-through: After contact/miss
-     - Recovery: After attack animation completes
-   - Blend physics forces with animation motion
-
-8. **Integrate with PhysicsAgent**:
-   - In FixedUpdate, when attack executing:
-     - Get attack type and parameters from interpreted actions
-     - Call AttackController methods at appropriate times
-     - Track attack state (windup, active, follow-through, recovery)
-
-9. **Tune force magnitudes**:
-   - Start conservative and increase:
-     - Jab force: 300-500N forward
-     - Hook force: 400-600N with rotation
-     - Uppercut force: 500-800N with upward component
-   - Weight shift: 0.3-0.5 units forward
-   - Test in Heuristic mode for feel
+1. Review PHASE2_ERRORS.md for namespace-related errors
+2. Common Unity 6 namespace changes to look for:
+   - `UnityEngine.Experimental` � new namespaces
+   - Input System namespace changes
+   - URP namespace changes (though package update happens in Phase 3)
+3. Fix namespace errors systematically:
+   - Open file with error in IDE (double-click error in Console)
+   - Update `using` statements at top of file
+   - Add new required namespaces
+   - Remove obsolete namespaces
+   - Save file
+4. Return to Unity and wait for recompilation
+5. Verify error is resolved in Console
+6. Repeat for all namespace errors
+7. Once namespace errors are fixed, recompile entire project (Assets > Reimport All)
 
 **Verification Checklist:**
-- [ ] AttackController.cs compiles without errors
-- [ ] Weight transfer visible during attacks
-- [ ] Punch forces applied during active frames
-- [ ] Torso rotation visible during hooks
-- [ ] Follow-through affects recovery timing
-- [ ] Recovery returns character to neutral
-- [ ] Physics forces blend smoothly with animations
-- [ ] No physics explosions or instability
+- [ ] All namespace errors resolved
+- [ ] Updated files compile successfully
+- [ ] Console shows reduced error count
+- [ ] No new errors introduced by namespace changes
 
 **Testing Instructions:**
-- Manual testing in Heuristic mode:
-  - Throw each punch type, observe weight shift
-  - Verify visible lean/rotation during hooks
-  - Check that character recovers to neutral after attack
-  - Test varying force multiplier (shift key in Heuristic)
-  - Ensure physics feels natural and responsive
+- Check Console after each file fix
+- Verify error count decreases
+- Ensure no new errors appear
+- Confirm project recompiles after "Reimport All"
 
 **Commit Message Template:**
 ```
-feat(physics-controllers): implement attack physics controllers
+fix(migration): resolve Unity 6 namespace changes
 
-- Created AttackController for physics-based striking
-- Implemented weight transfer during attacks (forward shift for jabs, rotation for hooks)
-- Applied punch forces to Rigidbody during active frames
-- Added torso rotation mechanics for hooks
-- Implemented follow-through and recovery physics
-- Synchronized physics forces with attack animations
-- Integrated AttackController with PhysicsAgent FixedUpdate
-- Tuned force magnitudes for realistic punch feel
+Updated using statements for Unity 6 APIs
+Fixed namespace errors in [X] files
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~10,000
+**Estimated tokens:** ~4,000
 
 ---
 
-## Task 4: Implement Attack Reward Function
+### Task 4: Fix Obsolete API Errors
 
-**Goal:** Design rewards that encourage effective, varied, and realistic attacking behavior.
+**Goal:** Replace obsolete Unity APIs with their Unity 6 equivalents
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Scripts/AI/PhysicsAgent/PhysicsAgentRewards.cs` (modify)
+- Various `.cs` files with obsolete API usage
 
 **Prerequisites:**
-- Task 3 completed (attack physics working)
-- Phase 1 movement rewards understood
+- Task 3 complete (namespace errors fixed)
 
 **Implementation Steps:**
 
-1. **Add combat effectiveness rewards for attacking**:
-   - **Hit Landed Reward** (+1.0 per hit):
-     - Positive reward when attack connects with opponent
-     - Scale by damage dealt (higher damage = more reward)
-     - Bonus for critical hits or knockdowns
-   - **Attack Accuracy Reward** (+0.2 per successful hit):
-     - Ratio of hits landed to attacks thrown
-     - Encourages attacking when high probability of success
-   - **Damage Dealt Reward** (+damage/max_health):
-     - Reward proportional to health removed
-     - Encourages high-value attacks (uppercuts > jabs)
-   - **Hit Received Penalty** (-0.5 per hit taken):
-     - Negative reward when opponent hits agent
-     - Encourages defense (Phase 4) and avoiding hits
-
-2. **Add physical realism rewards for attacks**:
-   - **Weight Transfer Reward** (+0.05 per attack):
-     - Check if weight shifted correctly for punch type
-     - Jab should shift forward, hook should rotate, etc.
-     - Reward if CoM motion matches attack type
-   - **Attack Timing Reward** (+0.03 per well-timed attack):
-     - Reward for attacking when opponent vulnerable
-     - Penalize attacking when opponent is blocking or out of range
-   - **Follow-Through Reward** (+0.02 per attack):
-     - Reward for appropriate follow-through intensity
-     - Too much = long recovery (bad)
-     - Too little = weak punch (bad)
-     - Optimal around 0.6-0.8 intensity
-
-3. **Add strategic depth rewards for attacks**:
-   - **Attack Variety Reward** (+0.1 per 5 seconds):
-     - Track recent attack types used
-     - Reward if multiple types used in window
-     - Prevents spamming single attack type
-   - **Combo Potential Reward** (+0.2 per combo):
-     - Reward for landing multiple hits in quick succession
-     - Encourages pressure and aggressive play
-   - **Punish Opponent's Mistakes** (+0.3):
-     - Extra reward for hitting opponent during their attack recovery
-     - Teaches counterattacking concept
-
-4. **Add player entertainment rewards for attacks**:
-   - **Close Combat Reward** (+0.1 per frame in striking range):
-     - Reward both fighters for engaging in close-range combat
-     - Encourages exciting exchanges over passive play
-   - **Back-and-Forth Reward** (+0.5):
-     - Reward when both fighters land hits in same episode
-     - Creates dynamic, competitive fights
-   - **Aggressive Play Reward** (+0.05 per attack thrown):
-     - Small reward for throwing attacks (even if miss)
-     - Prevents overly passive AI
-     - Balance with accuracy to avoid mindless spam
-
-5. **Add sparse milestone rewards**:
-   - **First Blood** (+2.0): Land first hit of the round
-   - **Knockout Bonus** (+20.0): Reduce opponent health to zero
-   - **Perfect Round** (+10.0): Win round without taking damage
-   - **Comeback Victory** (+5.0): Win from low health (<30%)
-
-6. **Update reward combination logic**:
-   - Adjust weights to balance movement and attack rewards:
-     - Combat effectiveness: 0.5 (increased from 0.4)
-     - Physical realism: 0.2 (same)
-     - Strategic depth: 0.2 (same)
-     - Player entertainment: 0.1 (decreased from 0.2)
-   - Movement is less critical now, combat more important
-
-7. **Handle opponent defeated scenario**:
-   - When opponent health reaches zero:
-     - Large positive reward to winner (+50.0)
-     - Large negative reward to loser (-50.0)
-     - End episode for both agents
-   - Reset environment for new episode
-
-8. **Add reward debugging**:
-   - Log individual reward components for attack behaviors
-   - Visualize attack reward contributions separately from movement
-   - Track hit accuracy, combo counts, attack variety metrics
+1. Review remaining errors in Console for "obsolete" or "deprecated" messages
+2. For each obsolete API error:
+   - Identify the obsolete API being used
+   - Find the Unity 6 replacement (error message usually suggests replacement)
+   - Open the file in IDE
+   - Replace obsolete API call with new API
+   - Update any changed parameters or signatures
+   - Save file
+3. Common Unity 6 obsolete APIs to watch for:
+   - Physics APIs (Unity may have updated collision detection APIs)
+   - Input System APIs (if using old input)
+   - Rendering APIs (some URP APIs may be obsolete)
+   - Camera APIs
+4. After fixing each file, verify compilation in Unity
+5. Document any APIs that don't have clear replacements in PHASE2_ERRORS.md
+6. Commit changes incrementally (every 5-10 files fixed)
 
 **Verification Checklist:**
-- [ ] Hit landed rewards trigger correctly
-- [ ] Hit received penalties apply properly
-- [ ] Attack variety tracking works over time windows
-- [ ] Combo detection counts sequential hits
-- [ ] Sparse milestone rewards fire at correct times
-- [ ] Reward balance feels appropriate (not dominated by one component)
-- [ ] Total reward values remain in reasonable range
+- [ ] All obsolete API errors identified
+- [ ] Replacements found for each obsolete API
+- [ ] Files updated with new APIs
+- [ ] Code compiles after changes
+- [ ] No functionality broken by API changes (verify in next tasks)
 
 **Testing Instructions:**
-- Manual testing in Heuristic mode:
-  - Land hits and observe positive rewards
-  - Get hit and observe negative rewards
-  - Vary attack types and verify variety reward
-  - Land combos and check combo rewards
-- Verify reward logging in TensorBoard during training
+- After each API fix, check Console for new errors
+- Verify method signatures match new API expectations
+- Ensure return values are handled correctly
+- Confirm code compiles cleanly
 
 **Commit Message Template:**
 ```
-feat(rewards): implement attack execution reward function
+fix(migration): replace obsolete APIs with Unity 6 equivalents
 
-- Added combat effectiveness rewards (hits landed, damage dealt, accuracy)
-- Added physical realism rewards (weight transfer, timing, follow-through)
-- Added strategic depth rewards (variety, combos, punishing mistakes)
-- Added player entertainment rewards (close combat, back-and-forth)
-- Added sparse milestone rewards (first blood, knockout, perfect round)
-- Updated reward weight balance to emphasize combat
-- Implemented opponent defeated scenario handling
-- Added attack-specific reward debugging and logging
+Updated [API names] to modern Unity 6 APIs
+Fixed obsolete API errors in [X] files
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~10,000
+**Estimated tokens:** ~4,500
 
 ---
 
-## Task 5: Update Training Configuration for Attacks
+### Task 5: Fix Type and Signature Errors
 
-**Goal:** Modify training config to account for expanded observation/action space and attack-focused rewards.
+**Goal:** Resolve method signature mismatches and type errors introduced by Unity 6
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Training/Config/attack_training.yaml` (new, based on movement_training.yaml)
+- Various `.cs` files with type/signature errors
 
 **Prerequisites:**
-- Task 4 completed (attack rewards implemented)
-- Phase 1 training config understood
+- Task 4 complete (obsolete APIs fixed)
 
 **Implementation Steps:**
 
-1. **Create attack_training.yaml**:
-   - Copy `movement_training.yaml` as base
-   - Modify for attack training specifics
-
-2. **Update hyperparameters for increased complexity**:
-   - `batch_size: 4096` (increased from 2048 due to more complex behavior)
-   - `buffer_size: 40960` (10x batch size)
-   - `learning_rate: 2e-4` (slightly decreased for stability)
-   - `beta: 8e-3` (increased entropy for attack exploration)
-   - `max_steps: 7000000` (more steps for attack learning)
-
-3. **Update network architecture**:
-   - `hidden_units: 384` (increased from 256 for larger observation/action space)
-   - `num_layers: 3` (added layer for attack decision complexity)
-
-4. **Configure curriculum learning** (optional but recommended):
-   - Start with movement-only, gradually enable attacks
-   - Lesson 1: Movement only (use Phase 1 model)
-   - Lesson 2: Enable attacks, increase combat reward weight
-   - Lesson 3: Full combat with all rewards
-   - Uses ML-Agents curriculum feature
-
-5. **Update self-play parameters**:
-   - `save_steps: 100000` (save opponents more frequently)
-   - `play_against_latest_model_ratio: 0.7` (higher, focuses on current skill)
-
-6. **Add reward signals**:
-   - Keep extrinsic with gamma: 0.99
-   - Optionally add GAIL (imitation) if you have demo recordings of good attacks
-   - Curiosity can help with attack exploration
-
-7. **Configure for transfer learning**:
-   - Initialize training from Phase 1 model:
-     - Use `--initialize-from=movement_phase1` flag
-     - Allows agent to keep movement skills while learning attacks
-     - Network must have compatible architecture (may need to expand carefully)
-   - Alternatively, start from scratch (longer but sometimes more stable)
+1. Review remaining errors for type mismatches and signature errors
+2. Common issues to look for:
+   - MonoBehaviour method signature changes (e.g., OnCollision, OnTrigger)
+   - Unity component property type changes
+   - Generic type constraints that changed
+   - Enum value changes or additions
+3. Fix each error:
+   - Open file in IDE
+   - Identify the type mismatch or signature issue
+   - Update method signature or type declaration
+   - Update any calling code if necessary
+   - Ensure compatibility with existing code
+   - Save file
+4. Pay special attention to:
+   - Character controller interfaces (ICharacterController)
+   - Physics callbacks (OnCollision*, OnTrigger*)
+   - Input System callbacks (if used)
+5. Verify no runtime issues introduced (will test more in later tasks)
+6. Commit changes as you fix categories of errors
 
 **Verification Checklist:**
-- [ ] attack_training.yaml has valid YAML syntax
-- [ ] Hyperparameters updated for attack complexity
-- [ ] Network architecture expanded appropriately
-- [ ] Self-play config adjusted
-- [ ] Transfer learning configured (if using)
+- [ ] All type mismatch errors resolved
+- [ ] Method signatures match Unity 6 expectations
+- [ ] Interface implementations correct
+- [ ] Generics compile successfully
+- [ ] No new type errors introduced
 
 **Testing Instructions:**
-- Validate config: `mlagents-learn <config> --help`
-- Ensure no errors before starting training
+- Check Console after each fix
+- Verify method signatures match Unity documentation
+- Ensure interface implementations complete
+- Confirm code compiles
 
 **Commit Message Template:**
 ```
-feat(training): create attack training configuration
+fix(migration): resolve Unity 6 type and signature changes
 
-- Created attack_training.yaml based on movement config
-- Increased batch size and buffer size for complexity
-- Expanded network to 3 layers with 384 hidden units
-- Configured transfer learning from Phase 1 model
-- Increased max training steps to 7M
-- Adjusted entropy and learning rate for attack exploration
-- Updated self-play parameters for faster opponent updates
+Updated method signatures and types for Unity 6
+Fixed type errors in [X] files
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~7,000
+**Estimated tokens:** ~4,000
 
 ---
 
-## Task 6: Train Attack Agent and Evaluate
+### Task 6: Achieve Zero Compilation Errors
 
-**Goal:** Execute training with attack capabilities and evaluate the resulting striking behavior.
+**Goal:** Fix all remaining compilation errors to achieve clean compilation
 
 **Files to Modify/Create:**
-- `Assets/Knockout/Training/Models/attack_phase2.onnx` (trained model)
-- `docs/TRAINING_LOG.md` (update with Phase 2 results)
+- Any remaining files with compilation errors
 
 **Prerequisites:**
-- Tasks 1-5 completed (full attack system ready)
-- Phase 1 model available for transfer learning
+- Tasks 3-5 complete (major error categories fixed)
 
 **Implementation Steps:**
 
-1. **Prepare for training**:
-   - Verify all components updated (observations, actions, rewards, physics controllers)
-   - Test in Heuristic mode that attacks work correctly
-   - Save TrainingArena scene
-
-2. **Start training with transfer learning**:
-   ```bash
-   mlagents-learn Assets/Knockout/Training/Config/attack_training.yaml --run-id=attack_phase2 --initialize-from=movement_phase1 --time-scale=20
-   ```
-   - If initialization fails (architecture mismatch), train from scratch:
-   ```bash
-   mlagents-learn Assets/Knockout/Training/Config/attack_training.yaml --run-id=attack_phase2 --time-scale=20
-   ```
-
-3. **Monitor training closely**:
-   - Watch TensorBoard for:
-     - Cumulative reward should increase
-     - Hit accuracy metric (custom scalar if logged)
-     - Damage dealt increasing over time
-     - Attack variety (track via custom scalars)
-   - Early training (first 500k steps):
-     - Agents may swing wildly, missing often
-     - Reward will be volatile as agents explore
-     - Look for ANY hits landing as progress sign
-
-4. **Mid-training checkpoints** (every 1M steps):
-   - Load checkpoint and observe:
-     - Do agents hit each other with attacks?
-     - Is attack timing improving (hitting vulnerable opponents)?
-     - Are multiple attack types used?
-     - Is movement still functional (not degraded)?
-   - If movement degraded catastrophically, consider:
-     - Freezing movement policy layers (advanced)
-     - Increasing movement reward weights
-     - Starting from scratch instead of transfer learning
-
-5. **Training duration**:
-   - Minimum: 3M steps (~2-3 hours)
-   - Recommended: 5-7M steps (~4-6 hours)
-   - Attacks are harder to learn than movement, expect longer training
-   - Stop when:
-     - Hit accuracy plateaus at reasonable level (>30%)
-     - Agents consistently land combos
-     - Attack variety is demonstrated
-
-6. **Evaluate trained model**:
-   - Quantitative metrics:
-     - Final cumulative reward
-     - Hit accuracy percentage
-     - Average damage per episode
-     - Knockout rate
-   - Qualitative evaluation:
-     - [ ] Agents throw punches during fights
-     - [ ] Attacks land on opponent (not just swinging wildly)
-     - [ ] Multiple attack types used (jabs, hooks, uppercuts)
-     - [ ] Weight transfer visible during punches
-     - [ ] Agents attack when opponent vulnerable
-     - [ ] Movement still natural (not degraded from Phase 1)
-     - [ ] Close-range combat occurs frequently
-     - [ ] Fights look dynamic and engaging
-
-7. **Compare to Phase 1**:
-   - Agent should retain movement skills from Phase 1
-   - Plus now actively attack opponent
-   - Ideal: seamless integration of movement + attacks
-
-8. **Export and integrate model**:
-   - Copy final model to `Assets/Knockout/Training/Models/attack_phase2.onnx`
-   - Test in gameplay scene
-   - Verify performance acceptable
-
-9. **Document results**:
-   - Update `docs/TRAINING_LOG.md` with Phase 2 details
-   - Include metrics, observations, issues encountered
-   - Note any hyperparameter adjustments made
-
-10. **Troubleshooting**:
-    - **Agents don't attack**:
-      - Increase attack reward magnitudes
-      - Decrease movement rewards (may be exploiting movement-only)
-      - Reduce attack execution cost (make attacking easier)
-    - **Agents spam attacks wildly**:
-      - Increase attack accuracy rewards
-      - Add larger penalty for missed attacks
-      - Increase attack variety rewards
-    - **Movement degraded**:
-      - Use transfer learning from Phase 1
-      - Increase movement reward weights
-      - Consider freezing movement layers
-    - **Training unstable**:
-      - Decrease learning rate
-      - Decrease batch size
-      - Check for NaN in observations/rewards
+1. Review Console for any remaining compilation errors
+2. Group remaining errors by similarity
+3. Fix errors systematically:
+   - Start with errors in core systems (CharacterController, Combat, AI)
+   - Move to UI and audio systems
+   - Finish with utilities and helpers
+4. For each error:
+   - Understand the root cause
+   - Determine the fix (API change, logic update, etc.)
+   - Make minimal changes to resolve error
+   - Test compilation
+   - Commit if multiple files fixed
+5. If stuck on any error:
+   - Search Unity 6 documentation
+   - Check Unity forums for similar issues
+   - Document the blocker in PHASE2_ERRORS.md
+   - Consider temporary workaround if safe
+6. Once Console shows zero errors, perform full recompilation (Assets > Reimport All)
+7. Verify zero errors persist after reimport
 
 **Verification Checklist:**
-- [ ] Training completes without errors
-- [ ] Cumulative reward increases over training
-- [ ] Agents demonstrate attacking behavior
-- [ ] Hit accuracy improves over training
-- [ ] Multiple attack types observed
-- [ ] Movement quality maintained from Phase 1
-- [ ] Model performs well in gameplay scene
-- [ ] Training results documented
+- [ ] Console shows 0 compilation errors
+- [ ] Full project reimport completes successfully
+- [ ] No errors after reimport
+- [ ] All scripts in project compile
+- [ ] DLLs built successfully (visible in Library folder)
 
 **Testing Instructions:**
-- Load trained model and run 20+ episodes
-- Manually observe and rate:
-  - Hit accuracy (% of attacks that land)
-  - Attack variety (number of different attacks per episode)
-  - Movement quality compared to Phase 1
-  - Overall fight entertainment value
+- Clear Console and recompile
+- Verify zero errors
+- Check for warnings (document but don't block on them)
+- Confirm Editor is responsive
 
 **Commit Message Template:**
 ```
-feat(training): train attack execution agent via self-play
+fix(migration): achieve zero compilation errors in Unity 6
 
-- Executed training with transfer learning from Phase 1
-- Trained for 5M steps over 5 hours
-- Achieved final cumulative reward of X.X
-- Agents demonstrate varied attack execution (jabs, hooks, uppercuts)
-- Hit accuracy improved to ~35% by end of training
-- Agents exhibit weight transfer and physics-based striking
-- Movement quality maintained from Phase 1
-- Exported attack_phase2.onnx model
-- Documented training process and results in TRAINING_LOG.md
+All scripts now compile successfully
+Resolved remaining [X] errors across project
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
 
+> Generated with Claude Code
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-**Estimated tokens:** ~12,000
+**Estimated tokens:** ~5,000
 
 ---
 
-## Phase 2 Verification
+### Task 7: Verify Basic Editor Functionality
 
-Complete checklist before proceeding to Phase 3:
+**Goal:** Confirm Unity 6 Editor works correctly with the project after compilation fixes
 
-### Observations
-- [ ] Attack opportunity observations added (~15 new observations)
-- [ ] Total observation space ~69 dimensions
-- [ ] Attack range detection accurate
-- [ ] Opponent vulnerability detection working
+**Files to Modify/Create:**
+- None (verification only)
 
-### Actions
-- [ ] Attack actions added to action space (total 15 actions)
-- [ ] Attack type discretization working correctly
-- [ ] Force multiplier and timing parameters functional
-- [ ] Attacks execute via CharacterCombat system
+**Prerequisites:**
+- Task 6 complete (zero compilation errors)
 
-### Physics Controllers
-- [ ] AttackController implemented for strike physics
-- [ ] Weight transfer visible during attacks
-- [ ] Punch forces applied during active frames
-- [ ] Follow-through and recovery mechanics working
-- [ ] Physics-enhanced attacks blend with animations
+**Implementation Steps:**
 
-### Reward Function
-- [ ] Combat effectiveness rewards for hits/damage
-- [ ] Physical realism rewards for technique
-- [ ] Strategic rewards for variety and combos
-- [ ] Sparse milestone rewards for knockouts
-- [ ] Reward balance appropriate
+1. Open MainScene.unity from Project window
+2. Verify scene loads without errors
+3. Check Hierarchy view shows scene objects
+4. Check Inspector shows component properties
+5. Navigate around the scene in Scene view (use mouse to pan/zoom)
+6. Enter Play mode:
+   - Click Play button
+   - Wait for game to initialize
+   - Verify game starts (no immediate crash)
+   - Observe Console for runtime errors (some expected - will fix in later phases)
+   - Exit Play mode after 30-60 seconds
+7. Test basic Editor operations:
+   - Create new GameObject in scene
+   - Add component to GameObject
+   - Delete GameObject
+   - Undo/Redo works
+8. Open another scene (greybox.unity or Sample.unity) to verify multi-scene support
+9. Close and reopen Unity to verify project state persists
 
-### Training Results
-- [ ] Training completed for at least 3M steps
-- [ ] Agents attack opponents during fights
-- [ ] Hit accuracy >25% by training end
-- [ ] Multiple attack types demonstrated
-- [ ] Movement quality maintained
-- [ ] Model exported as attack_phase2.onnx
+**Verification Checklist:**
+- [ ] MainScene loads without errors
+- [ ] Scene view navigation works
+- [ ] Play mode starts successfully
+- [ ] Basic Editor operations functional (create, modify, delete)
+- [ ] Multiple scenes can be opened
+- [ ] Project state persists across Editor restarts
 
-### Known Limitations
-- Agents may favor certain attack types over others
-- Hit accuracy still below human-level (30-40% is good for RL)
-- No defensive reactions yet (agents take hits without blocking)
-- Weight transfer may be exaggerated or subtle (needs tuning)
+**Testing Instructions:**
+- Load each main scene and verify it opens
+- Enter Play mode and run game for 1 minute
+- Check Console for runtime errors (document but don't fix yet)
+- Test basic editing operations
+- Verify no Editor crashes
+
+**Commit Message Template:**
+```
+test(migration): verify Unity 6 Editor functionality
+
+Confirmed scenes load, Play mode works, basic editing functional
+Runtime errors exist but Editor is stable
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+
+> Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Estimated tokens:** ~4,000
 
 ---
 
-## Next Steps
+### Task 8: Tag Post-Upgrade State and Create Checkpoint
 
-After Phase 2 completion:
-- **[Phase 3: Hit Reactions & Balance](Phase-3.md)** - Add physics-based hit reactions, stumbling, and recovery
-- Ensure attack_phase2.onnx model saved before proceeding
+**Goal:** Create git tag for post-upgrade state as rollback point and milestone
+
+**Files to Modify/Create:**
+- None (git operations only)
+
+**Prerequisites:**
+- Task 7 complete (Editor functionality verified)
+- All changes committed
+
+**Implementation Steps:**
+
+1. Verify all changes are committed:
+   - Run git status
+   - Stage and commit any uncommitted changes
+2. Create annotated git tag "post-unity6-upgrade":
+   - Tag the current commit
+   - Include message describing successful Unity 6 upgrade
+   - Note that compilation is clean but runtime issues may exist
+3. Update `docs/migration/UPGRADE_CHECKLIST.md`:
+   - Mark Phase 2 as complete
+   - Note any deferred issues for later phases
+   - Record current state (compiles, Editor functional)
+4. Create summary of Phase 2 results:
+   - Number of errors fixed
+   - Files modified
+   - Time spent
+   - Known remaining issues
+5. Commit documentation updates
+6. Push commits and tags to remote (if using remote repository)
+
+**Verification Checklist:**
+- [ ] All code changes committed
+- [ ] Git tag "post-unity6-upgrade" exists
+- [ ] UPGRADE_CHECKLIST.md updated
+- [ ] Phase 2 summary documented
+- [ ] Changes pushed to remote (if applicable)
+
+**Testing Instructions:**
+- Run `git tag` and verify "post-unity6-upgrade" is listed
+- Run `git log --oneline -5` to see recent commits
+- Check that no uncommitted changes exist (git status clean)
+
+**Commit Message Template:**
+```
+chore(migration): complete Phase 2 Unity 6 upgrade
+
+ Project compiles in Unity 6.0
+ Editor functional and stable
+ Scenes load and Play mode works
+�  Runtime issues exist (to be fixed in Phase 3-4)
+
+Tagged as 'post-unity6-upgrade'
+
+Author: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+Committer: HatmanStack <82614182+HatmanStack@users.noreply.github.com>
+
+> Generated with Claude Code
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+**Estimated tokens:** ~3,000
+
+---
+
+## Phase Verification
+
+After completing all tasks in Phase 2, verify the following:
+
+### Compilation Success
+- [ ] Console shows 0 compilation errors
+- [ ] All scripts compile successfully
+- [ ] Project reimports without errors
+- [ ] DLLs built in Library folder
+
+### Editor Functionality
+- [ ] Project opens in Unity 6.0 successfully
+- [ ] Scenes load without fatal errors
+- [ ] Play mode can be entered and exited
+- [ ] Basic editing operations work
+- [ ] Editor doesn't crash during normal use
+
+### Documentation
+- [ ] PHASE2_ERRORS.md documents all errors encountered
+- [ ] Error fixes documented in commit messages
+- [ ] UPGRADE_CHECKLIST.md updated with Phase 2 completion
+
+### Version Control
+- [ ] All changes committed
+- [ ] Git tag "post-unity6-upgrade" exists
+- [ ] Commit history shows incremental fixes
+- [ ] Clean git status (no uncommitted changes)
+
+### Known Issues (Expected)
+- [ ] Runtime errors may exist (will fix in Phase 3-4)
+- [ ] Tests may not pass yet (Phase 4)
+- [ ] Warnings may exist (acceptable for now)
+- [ ] Visual issues may be present (package updates in Phase 3)
+
+---
+
+## Known Limitations and Technical Debt
+
+**Deferred to Later Phases:**
+- Package updates (Phase 3) - URP, Input System, Cinemachine
+- Test failures (Phase 4) - tests compile but may fail
+- Third-party asset issues (Phase 5) - Asset Store packages may have issues
+- Deprecation warnings (Phase 6) - will address during modernization
+
+**Mitigation:**
+- Runtime errors are expected at this stage
+- Package updates in Phase 3 will resolve many issues
+- Test suite in Phase 4 will systematically address remaining bugs
+
+---
+
+## Next Phase
+
+Once Phase 2 verification is complete:
+- Proceed to [Phase-3.md](Phase-3.md) - Package Updates & Compatibility
+- Phase 3 will update URP, Input System, and other Unity packages
+- Many runtime issues will be resolved by package updates
+
+**Estimated time for Phase 2:** 4-8 hours (depending on number of compilation errors)
