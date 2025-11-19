@@ -27,7 +27,7 @@ namespace Knockout.Characters.Components
 
         // Combo state
         private int _comboCount = 0;
-        private List<int> _attackSequenceHistory = new List<int>();
+        private List<int> _attackSequenceHistory = new List<int>(10); // Pre-allocated for typical combo length
         private int _lastAttackFrame = -1000; // Frame when last attack landed
         private int _lastAttackTypeIndex = -1;
         private bool _isInitialized = false;
@@ -39,6 +39,10 @@ namespace Knockout.Characters.Components
         // Frame tracking (at 60fps)
         private const int TARGET_FRAME_RATE = 60;
         private int _currentFrame = 0;
+
+        // Cached sequence data (optimization: avoid repeated ScriptableObject access)
+        private int[][] _cachedSequencePatterns;
+        private ComboSequenceData[] _cachedSequences;
 
         #region Events
 
@@ -202,7 +206,46 @@ namespace Knockout.Characters.Components
                 _characterParry.OnCounterWindowClosed += HandleCounterWindowClosed;
             }
 
+            // Cache sequence data for performance (avoid repeated ScriptableObject access)
+            CacheSequenceData();
+
             _isInitialized = true;
+        }
+
+        /// <summary>
+        /// Caches sequence data to avoid repeated ScriptableObject access during gameplay.
+        /// </summary>
+        private void CacheSequenceData()
+        {
+            if (comboSequences == null || comboSequences.Length == 0)
+            {
+                _cachedSequencePatterns = new int[0][];
+                _cachedSequences = new ComboSequenceData[0];
+                return;
+            }
+
+            int validSequenceCount = 0;
+            for (int i = 0; i < comboSequences.Length; i++)
+            {
+                if (comboSequences[i] != null)
+                {
+                    validSequenceCount++;
+                }
+            }
+
+            _cachedSequencePatterns = new int[validSequenceCount][];
+            _cachedSequences = new ComboSequenceData[validSequenceCount];
+
+            int index = 0;
+            for (int i = 0; i < comboSequences.Length; i++)
+            {
+                if (comboSequences[i] != null)
+                {
+                    _cachedSequencePatterns[index] = comboSequences[i].AttackSequence;
+                    _cachedSequences[index] = comboSequences[i];
+                    index++;
+                }
+            }
         }
 
         #endregion
@@ -374,54 +417,49 @@ namespace Knockout.Characters.Components
         /// <summary>
         /// Checks if the current attack sequence matches any predefined combos.
         /// Returns the completed sequence if found, null otherwise.
+        /// Optimized to use cached sequence data.
         /// </summary>
         private ComboSequenceData CheckForSequenceCompletion()
         {
-            if (comboSequences == null || comboSequences.Length == 0)
+            if (_cachedSequencePatterns == null || _cachedSequencePatterns.Length == 0)
             {
                 return null;
             }
 
-            // Check each predefined sequence
-            foreach (var sequence in comboSequences)
-            {
-                if (sequence == null) continue;
+            int historyCount = _attackSequenceHistory.Count;
 
-                // Check if current history matches this sequence
-                if (IsSequenceMatch(sequence))
+            // Check each cached sequence pattern (from longest to shortest for early exit)
+            for (int seqIndex = 0; seqIndex < _cachedSequencePatterns.Length; seqIndex++)
+            {
+                int[] pattern = _cachedSequencePatterns[seqIndex];
+                int patternLength = pattern.Length;
+
+                // Need at least as many attacks as pattern length
+                if (historyCount < patternLength)
                 {
-                    return sequence;
+                    continue;
+                }
+
+                // Check if the last N attacks match the pattern
+                bool matches = true;
+                int startIndex = historyCount - patternLength;
+
+                for (int i = 0; i < patternLength; i++)
+                {
+                    if (_attackSequenceHistory[startIndex + i] != pattern[i])
+                    {
+                        matches = false;
+                        break;
+                    }
+                }
+
+                if (matches)
+                {
+                    return _cachedSequences[seqIndex];
                 }
             }
 
             return null;
-        }
-
-        /// <summary>
-        /// Checks if the current attack history matches a specific sequence.
-        /// </summary>
-        private bool IsSequenceMatch(ComboSequenceData sequence)
-        {
-            int[] targetSequence = sequence.AttackSequence;
-            int sequenceLength = targetSequence.Length;
-
-            // Need at least as many attacks as sequence length
-            if (_attackSequenceHistory.Count < sequenceLength)
-            {
-                return false;
-            }
-
-            // Check if the last N attacks match the sequence
-            int startIndex = _attackSequenceHistory.Count - sequenceLength;
-            for (int i = 0; i < sequenceLength; i++)
-            {
-                if (_attackSequenceHistory[startIndex + i] != targetSequence[i])
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
 
         #endregion
