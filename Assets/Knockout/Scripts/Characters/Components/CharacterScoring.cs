@@ -199,8 +199,9 @@ namespace Knockout.Characters.Components
             // Combat events
             if (_characterCombat != null)
             {
-                // Note: We need an OnHitLanded event - this may not exist yet
-                // Will need to add this or use existing hit detection events
+                _characterCombat.OnHitLanded += HandleHitLanded;
+                _characterCombat.OnAttackBlocked += HandleAttackBlocked;
+                _characterCombat.OnBlockStarted += HandleBlockStarted;
             }
 
             // Combo events
@@ -236,6 +237,13 @@ namespace Knockout.Characters.Components
 
         private void UnsubscribeFromEvents()
         {
+            if (_characterCombat != null)
+            {
+                _characterCombat.OnHitLanded -= HandleHitLanded;
+                _characterCombat.OnAttackBlocked -= HandleAttackBlocked;
+                _characterCombat.OnBlockStarted -= HandleBlockStarted;
+            }
+
             if (_characterComboTracker != null)
             {
                 _characterComboTracker.OnComboSequenceCompleted -= HandleComboSequenceCompleted;
@@ -281,6 +289,33 @@ namespace Knockout.Characters.Components
 
         #region Event Handlers
 
+        private void HandleHitLanded(float damage, bool isSpecialMove)
+        {
+            // Track clean hit
+            _cleanHitsLanded++;
+            _totalDamageDealt += damage;
+
+            // Track special move landing
+            if (isSpecialMove)
+            {
+                _specialMovesLanded++;
+            }
+
+            RecalculateScore();
+        }
+
+        private void HandleAttackBlocked()
+        {
+            // Opponent blocked our attack - no points for us
+            // Could track missed opportunities here if needed
+        }
+
+        private void HandleBlockStarted()
+        {
+            // We started blocking - this will be scored when we successfully block a hit
+            // Actual block success is tracked via damage reduction in CharacterHealth
+        }
+
         private void HandleComboSequenceCompleted(ComboSequenceData sequenceData)
         {
             _comboSequencesLanded++;
@@ -289,8 +324,9 @@ namespace Knockout.Characters.Components
 
         private void HandleDodgeStarted(Combat.DodgeDirection direction)
         {
-            // Note: We need to track if dodge actually avoided a hit
-            // For now, just count dodge starts
+            // Note: Currently counting all dodges
+            // Ideally should only count successful dodges that avoided damage
+            // This would require integration with hit detection system
             _dodgesSuccessful++;
             RecalculateScore();
         }
@@ -309,10 +345,8 @@ namespace Knockout.Characters.Components
 
         private void HandleSpecialMoveUsed(SpecialMoveData specialMoveData)
         {
-            // Note: This counts special move execution, not necessarily landing
-            // Ideally we'd track on hit, but this is simpler for now
-            _specialMovesLanded++;
-            RecalculateScore();
+            // Note: Special move landing is now tracked in HandleHitLanded
+            // This just tracks execution (for potential future use)
         }
 
         #endregion

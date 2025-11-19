@@ -1,5 +1,40 @@
 # Phase 4: Special Moves & Judge Scoring
 
+## Review Feedback (Iteration 1)
+
+### Task 8: CharacterScoring Component - Event Integration
+
+> **Consider:** Looking at `CharacterScoring.cs:202-204`, there's a note saying "We need an OnHitLanded event - this may not exist yet". Have you verified whether `CharacterCombat` actually fires events when hits land?
+>
+> **Think about:** Running `Grep pattern: "public event.*OnHitLanded" in CharacterCombat.cs` shows no results. How can CharacterScoring track clean hits and damage dealt if there's no event to subscribe to?
+>
+> **Reflect:** The plan at Task 8, line 517 specifies subscribing to "CharacterCombat: OnHitLanded, OnAttackBlocked, OnHitTaken". Are these events present in CharacterCombat? If not, what needs to be added?
+>
+> **Consider:** At `CharacterScoring.cs:292`, there's another note: "We need to track if dodge actually avoided a hit". Are you counting all dodges, or only successful ones that avoided damage?
+>
+> **Think about:** At `CharacterScoring.cs:312`, the comment says "This counts special move execution, not necessarily landing". Should scoring track when special moves are used, or when they successfully hit the opponent?
+
+### Task 8: Missing Event Handlers
+
+> **Reflect:** The `CharacterScoring` component subscribes to several events in `SubscribeToEvents()`. Have you implemented ALL the event handlers that the component needs?
+>
+> **Consider:** Looking at lines 200-204, the combat event subscription is commented out with a note. What happens to clean hit tracking, damage tracking, and block tracking without these events?
+>
+> **Think about:** Would adding the missing events to `CharacterCombat` (OnHitLanded, OnAttackBlocked, OnHitTaken) allow the scoring system to work as designed?
+
+### Integration Question
+
+> **Reflect:** The plan specifies comprehensive stat tracking including "Clean hits landed" and "Total damage dealt" (Task 8, step 3). Without hit events from CharacterCombat, how is your implementation tracking these stats?
+>
+> **Consider:** Should `CharacterCombat` be extended to fire events when:
+> - A hit successfully lands (OnHitLanded with damage parameter)?
+> - An attack is blocked (OnAttackBlocked)?
+> - Character takes a hit (OnHitTaken with damage parameter)?
+>
+> **Think about:** Would this require modifying Phase 3 (CharacterCombat) to add these events before Phase 4 scoring can work correctly?
+
+---
+
 ## Phase Goal
 
 Implement character signature special moves with cooldown and stamina gating, plus comprehensive judge scoring system for round decisions. Special moves are powerful, unique techniques with dual-resource requirements. Judge scoring tracks all combat actions to determine round winners when time expires without knockout.

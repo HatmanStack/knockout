@@ -78,6 +78,17 @@ namespace Knockout.Characters.Components
         /// </summary>
         public event Action OnAttackFailedNoStamina;
 
+        /// <summary>
+        /// Fired when this character lands a hit on an opponent.
+        /// Parameters: (damage dealt, is special move)
+        /// </summary>
+        public event Action<float, bool> OnHitLanded;
+
+        /// <summary>
+        /// Fired when an attack is blocked by opponent.
+        /// </summary>
+        public event Action OnAttackBlocked;
+
         #endregion
 
         #region Public Properties
@@ -349,6 +360,24 @@ namespace Knockout.Characters.Components
             Debug.Log($"[{gameObject.name}] Special Move '{specialMoveData.SpecialMoveName}' executed!");
 
             return true;
+        }
+
+        /// <summary>
+        /// Called by hit detection system when this character's attack lands on opponent.
+        /// </summary>
+        /// <param name="damageDealt">Amount of damage dealt</param>
+        /// <param name="wasBlocked">Whether the hit was blocked</param>
+        public void NotifyHitLanded(float damageDealt, bool wasBlocked)
+        {
+            if (wasBlocked)
+            {
+                OnAttackBlocked?.Invoke();
+            }
+            else
+            {
+                // Fire hit landed event
+                OnHitLanded?.Invoke(damageDealt, _isSpecialMoveActive);
+            }
         }
 
         #endregion

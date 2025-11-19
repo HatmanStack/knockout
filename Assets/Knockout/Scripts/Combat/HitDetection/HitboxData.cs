@@ -287,6 +287,16 @@ namespace Knockout.Combat.HitDetection
                 // Apply damage
                 health.TakeDamage(hitData);
 
+                // Notify attacker that hit landed
+                if (ownerCharacter != null)
+                {
+                    CharacterCombat attackerCombat = ownerCharacter.GetComponent<CharacterCombat>();
+                    if (attackerCombat != null)
+                    {
+                        attackerCombat.NotifyHitLanded(hitData.Damage, wasBlocking);
+                    }
+                }
+
                 // If hit was blocked, break attacker's combo
                 if (wasBlocking)
                 {
