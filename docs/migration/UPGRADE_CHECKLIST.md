@@ -18,7 +18,7 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 |-------|--------|----------------|--------------|
 | Phase 0: Foundation | ⏭️ Skipped | N/A | N/A |
 | Phase 1: Pre-Upgrade Prep | 🔄 In Progress | - | pre-unity6-upgrade |
-| Phase 2: Unity 6 Upgrade | ⏸️ Not Started | - | post-unity6-upgrade |
+| Phase 2: Unity 6 Upgrade | ⚠️ Ready (Unity Editor Required) | - | post-unity6-upgrade |
 | Phase 3: Package Updates | ⏸️ Not Started | - | packages-updated |
 | Phase 4: Test Migration | ⏸️ Not Started | - | tests-passing |
 | Phase 5: Asset Updates | ⏸️ Not Started | - | assets-updated |
@@ -28,9 +28,10 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 **Legend:**
 - ✅ Complete
 - 🔄 In Progress
+- ⚠️ Ready (Unity Editor Required)
 - ⏸️ Not Started
 - ⏭️ Skipped
-- ⚠️ Issues/Blocked
+- ❌ Blocked
 
 ---
 
@@ -190,9 +191,22 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 
 ## Phase 2: Unity 6 Upgrade Execution
 
-**Status:** ⏸️ Not Started
+**Status:** ⚠️ Ready for Execution (Unity Editor Required)
 **Estimated Time:** 4-8 hours
 **Rollback Tag:** `post-unity6-upgrade` (create after completion)
+**Documentation:** See `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` for detailed step-by-step instructions
+
+### Unity Editor Requirement
+
+**⚠️ CRITICAL: All Phase 2 tasks require Unity Editor access**
+
+Phase 2 cannot be started without Unity Editor because:
+- Opening project in Unity 6 requires Unity Editor
+- Viewing compilation errors requires Unity Console
+- Fixing errors requires Unity compilation verification
+- All 8 tasks are Unity Editor-dependent
+
+**When Unity Editor becomes available:** Follow detailed instructions in `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md` Phase 2 section (Tasks 2-1 through 2-8).
 
 ### Prerequisites
 - [ ] Phase 1 Tasks 1, 5, 8 completed (Unity Editor verification)
@@ -200,12 +214,110 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 - [ ] External backup verified
 - [ ] Unity 6.0 LTS installed
 
+### Task Checklist
+
+#### Task 2-1: Open Project in Unity 6.0 ⚠️ REQUIRES UNITY EDITOR
+- [ ] Close Unity 2021.3
+- [ ] Launch Unity Hub
+- [ ] Select Unity 6.0.x for Knockout project
+- [ ] Confirm upgrade warning
+- [ ] Wait for automatic upgrade (10-30 minutes)
+- [ ] Accept API Updater changes
+- [ ] Wait for asset import completion
+- [ ] Verify Console is accessible
+- [ ] Commit changes
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-2: Review and Document Errors ⚠️ REQUIRES UNITY EDITOR
+- [ ] Open Console window
+- [ ] Count unique compilation errors
+- [ ] Create `docs/migration/PHASE2_ERRORS.md`
+- [ ] Document each error category
+- [ ] Prioritize errors (Critical, High, Medium, Low)
+- [ ] Commit error documentation
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-3: Fix Namespace Changes ⚠️ REQUIRES UNITY EDITOR
+- [ ] Review namespace errors in PHASE2_ERRORS.md
+- [ ] Fix UnityEngine.Experimental namespace changes
+- [ ] Fix Input System namespace changes
+- [ ] Fix URP namespace changes
+- [ ] Update using statements systematically
+- [ ] Verify compilation after each fix
+- [ ] Reimport all assets
+- [ ] Commit changes
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-4: Fix Obsolete API Errors ⚠️ REQUIRES UNITY EDITOR
+- [ ] Review obsolete API errors in Console
+- [ ] Identify replacements for each obsolete API
+- [ ] Update Physics APIs if needed
+- [ ] Update Input System APIs if needed
+- [ ] Update Rendering APIs if needed
+- [ ] Verify compilation after changes
+- [ ] Commit incrementally
+- [ ] Document any unresolved APIs
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-5: Fix Type and Signature Errors ⚠️ REQUIRES UNITY EDITOR
+- [ ] Review type mismatch errors
+- [ ] Fix MonoBehaviour method signatures
+- [ ] Fix Unity component property types
+- [ ] Fix generic type constraints
+- [ ] Update character controller interfaces
+- [ ] Update physics callbacks
+- [ ] Verify no runtime issues introduced
+- [ ] Commit changes
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-6: Achieve Zero Compilation Errors ⚠️ REQUIRES UNITY EDITOR
+- [ ] Review remaining Console errors
+- [ ] Group errors by similarity
+- [ ] Fix core system errors first
+- [ ] Fix UI and audio errors
+- [ ] Fix utility and helper errors
+- [ ] Search Unity docs for stuck errors
+- [ ] Perform full reimport
+- [ ] Verify zero errors persist
+- [ ] Commit changes
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-7: Verify Editor Functionality ⚠️ REQUIRES UNITY EDITOR
+- [ ] Open MainScene.unity
+- [ ] Verify scene loads without errors
+- [ ] Test scene view navigation
+- [ ] Enter Play mode
+- [ ] Test basic gameplay (30-60 seconds)
+- [ ] Test basic Editor operations (create/modify/delete)
+- [ ] Open other scenes (greybox, Sample)
+- [ ] Close and reopen Unity
+- [ ] Verify project state persists
+- [ ] Commit verification notes
+
+**Status:** Cannot complete without Unity Editor
+
+#### Task 2-8: Tag Post-Upgrade State ⚠️ REQUIRES UNITY EDITOR
+- [ ] Verify all changes committed
+- [ ] Create git tag "post-unity6-upgrade"
+- [ ] Update UPGRADE_CHECKLIST.md (mark Phase 2 complete)
+- [ ] Create Phase 2 summary (errors fixed, time spent)
+- [ ] Commit documentation updates
+- [ ] Push to remote (if applicable)
+
+**Status:** Cannot complete without Unity Editor
+
 ### Major Milestones
 - [ ] Open project in Unity 6.0 for first time
 - [ ] Allow Unity API Updater to run
 - [ ] Fix immediate compilation errors
 - [ ] Verify Editor functionality
-- [ ] Create WebGL build (smoke test)
+- [ ] Create WebGL build (smoke test - optional)
 - [ ] Commit and tag "post-unity6-upgrade"
 
 ### Critical Files to Watch
@@ -224,6 +336,25 @@ This checklist tracks the progress of the Knockout project upgrade from Unity 20
 - ✅ Editor doesn't crash
 - ✅ Can enter Play mode
 - ✅ WebGL build succeeds (even if buggy)
+
+### Phase 2 Summary
+
+**Tasks Completed:** 0/8 (0%)
+**Tasks Blocked:** 8/8 (100% require Unity Editor)
+**Blockers:** Unity Editor access required for ALL Phase 2 tasks
+
+**Documentation Created:**
+- ✅ Detailed Phase 2 instructions in `docs/plans/UNITY_EDITOR_INSTRUCTIONS.md`
+- ⚠️ PHASE2_ERRORS.md (will be created during Task 2-2)
+
+**Ready for Execution:** ✅ Yes (when Unity Editor becomes available)
+
+**Important Notes:**
+- Phase 2 is fundamentally different from other phases
+- Cannot prepare code changes without seeing Unity 6 errors first
+- All tasks are reactive to what Unity 6 compilation reveals
+- Detailed step-by-step instructions documented and ready
+- Expect 4-8 hours of focused work once Unity Editor is available
 
 ---
 
